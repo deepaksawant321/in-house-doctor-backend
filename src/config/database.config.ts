@@ -9,7 +9,7 @@ export const getDatabaseConfig = (
 
     host: configService.get<string>('DB_HOST'),
 
-    port: parseInt(configService.get<string>('DB_PORT') || '1433'),
+    port: Number(configService.get<string>('DB_PORT') || 1433),
 
     username: configService.get<string>('DB_USERNAME'),
 
