@@ -1,16 +1,29 @@
-import { registerAs } from '@nestjs/config';
+import { TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { ConfigService } from '@nestjs/config';
 
-export default registerAs('database', () => ({
-  type: 'mssql',
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT ? parseInt(process.env.DB_PORT, 10) : 1433,
-  username: process.env.DB_USERNAME || 'sa',
-  password: process.env.DB_PASSWORD || 'password',
-  database: process.env.DB_NAME || 'InHouseDoctorDB',
-  synchronize: false, // CRITICAL: Database already exists, do not modify schema
-  autoLoadEntities: true,
-  options: {
-    encrypt: false,
-    trustServerCertificate: true,
-  },
-}));
+export const getDatabaseConfig = (
+  configService: ConfigService,
+): TypeOrmModuleOptions => {
+  return {
+    type: 'mssql',
+
+    host: configService.get<string>('DB_HOST'),
+
+    port: parseInt(configService.get<string>('DB_PORT') || '1433'),
+
+    username: configService.get<string>('DB_USERNAME'),
+
+    password: configService.get<string>('DB_PASSWORD'),
+
+    database: configService.get<string>('DB_NAME'),
+
+    entities: [__dirname + '/../../**/*.entity{.ts,.js}'],
+
+    synchronize: false,
+
+    options: {
+      encrypt: false,
+      trustServerCertificate: true,
+    },
+  };
+};
