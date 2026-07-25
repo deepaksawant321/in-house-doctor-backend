@@ -8,10 +8,15 @@ import { GlobalExceptionFilter } from './common/filters/global-exception.filter'
 import { winstonConfig } from './common/logger/winston.logger';
 import { WinstonModule } from 'nest-winston';
 
+import { NestExpressApplication } from '@nestjs/platform-express';
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, {
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: WinstonModule.createLogger(winstonConfig),
   });
+  
+  // Enable trusting the reverse proxy (Nginx) for express-rate-limit to work correctly
+  app.set('trust proxy', 1);
 
   const configService = app.get(require('@nestjs/config').ConfigService);
 
