@@ -1,7 +1,8 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { MailerModule } from '@nestjs-modules/mailer';
 import { DatabaseModule } from './common/database/database.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { OtpModule } from './modules/otp/otp.module';
@@ -34,6 +35,24 @@ import { join } from 'path';
     }),
     ConfigModule.forRoot({
       isGlobal: true,
+    }),
+    MailerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        transport: {
+          host: config.get<string>('SMTP_HOST'),
+          port: config.get<number>('SMTP_PORT'),
+          secure: config.get<string>('SMTP_SECURE') === 'true',
+          auth: {
+            user: config.get<string>('SMTP_USER'),
+            pass: config.get<string>('SMTP_PASSWORD'),
+          },
+        },
+        defaults: {
+          from: `"No Reply" <${config.get<string>('MAIL_FROM')}>`,
+        },
+      }),
     }),
     DatabaseModule,
     AuthModule,

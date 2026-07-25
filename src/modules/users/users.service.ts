@@ -23,11 +23,15 @@ export class UsersService {
   }
 
   async create(userData: Partial<User>): Promise<User> {
-    const existingEmail = await this.findByEmail(userData.email!);
-    if (existingEmail) throw new BadRequestException('Email already in use');
+    if (userData.email) {
+      const existingEmail = await this.findByEmail(userData.email);
+      if (existingEmail) throw new BadRequestException('Email already in use');
+    }
 
-    const existingPhone = await this.findByPhone(userData.phoneNumber!);
-    if (existingPhone) throw new BadRequestException('Phone number already in use');
+    if (userData.phoneNumber) {
+      const existingPhone = await this.findByPhone(userData.phoneNumber);
+      if (existingPhone) throw new BadRequestException('Phone number already in use');
+    }
 
     const user = this.usersRepo.create(userData);
     return this.usersRepo.save(user);

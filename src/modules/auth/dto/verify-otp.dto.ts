@@ -1,14 +1,19 @@
-import { IsNotEmpty, IsPhoneNumber, Length } from 'class-validator';
+import { IsNotEmpty, IsString, Length } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class VerifyOtpDto {
-  @ApiProperty({ example: '+1234567890' })
+  @ApiProperty({ example: 'user@example.com or +1234567890' })
   @IsNotEmpty()
-  @IsPhoneNumber()
-  phoneNumber: string;
+  @IsString()
+  identifier: string;
 
-  @ApiProperty({ example: '1234', minLength: 4, maxLength: 4 })
+  @ApiProperty({ example: '123456', minLength: 6, maxLength: 6 })
   @IsNotEmpty()
-  @Length(4, 4, { message: 'OTP must be exactly 4 digits' })
-  otpCode: string;
+  @Length(6, 6, { message: 'OTP must be exactly 6 digits' })
+  otp: string;
+
+  @ApiProperty({ example: 'LOGIN' })
+  @IsNotEmpty()
+  @IsString()
+  purpose: string;
 }

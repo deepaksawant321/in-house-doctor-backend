@@ -13,9 +13,23 @@ async function bootstrap() {
     logger: WinstonModule.createLogger(winstonConfig),
   });
 
+  const configService = app.get(require('@nestjs/config').ConfigService);
+
   // Security
-  app.use(helmet());
-  app.enableCors();
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }));
+  
+  const corsOrigin = configService.get('CORS_ORIGIN');
+  const allowedOrigins = corsOrigin ? corsOrigin.split(',') : ['http://localhost:3000'];
+  if (process.env.NODE_ENV !== 'production') {
+    allowedOrigins.push('http://localhost:3000');
+  }
+
+  app.enableCors({
+    origin: allowedOrigins,
+    credentials: true,
+  });
   
   app.use(
     rateLimit({
@@ -38,7 +52,6 @@ async function bootstrap() {
   // Swagger Documentation
   setupSwagger(app);
 
-  const configService = app.get(require('@nestjs/config').ConfigService);
   const port = configService.get('PORT') || 3001;
   await app.listen(port);
 }

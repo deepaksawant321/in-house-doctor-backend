@@ -25,18 +25,24 @@ export class AuthService {
   ) {}
 
   async sendOtpLogin(sendOtpDto: SendOtpDto) {
-    let user = await this.usersService.findByPhone(sendOtpDto.phoneNumber);
+    let user;
+    if (sendOtpDto.channel === 'EMAIL') {
+      user = await this.usersService.findByEmail(sendOtpDto.identifier);
+    } else {
+      user = await this.usersService.findByPhone(sendOtpDto.identifier);
+    }
+
     if (!user) {
       user = await this.usersService.create({
         fullName: 'Guest User',
-        email: `guest_${Date.now()}@inhousedoctor.com`,
-        phoneNumber: sendOtpDto.phoneNumber,
+        email: sendOtpDto.channel === 'EMAIL' ? sendOtpDto.identifier : `guest_${Date.now()}@inhousedoctor.com`,
+        phoneNumber: sendOtpDto.channel === 'SMS' ? sendOtpDto.identifier : Date.now().toString().substring(0, 15),
         isVerified: false,
         status: 'Active'
       });
     }
 
-    const otpCode = await this.otpService.generateOtp(user.phoneNumber);
+    const otpCode = await this.otpService.generateOtp(sendOtpDto.identifier, sendOtpDto.channel, sendOtpDto.purpose);
     return {
       success: true,
       message: 'OTP sent successfully',
@@ -45,15 +51,21 @@ export class AuthService {
   }
 
   async loginWithOtp(verifyOtpDto: VerifyOtpDto) {
-    await this.otpService.verifyOtp(verifyOtpDto.phoneNumber, verifyOtpDto.otpCode);
+    await this.otpService.verifyOtp(verifyOtpDto.identifier, verifyOtpDto.otp, verifyOtpDto.purpose);
 
-    let user = await this.usersService.findByPhone(verifyOtpDto.phoneNumber);
+    let user;
+    if (verifyOtpDto.identifier.includes('@')) {
+      user = await this.usersService.findByEmail(verifyOtpDto.identifier);
+    } else {
+      user = await this.usersService.findByPhone(verifyOtpDto.identifier);
+    }
+
     if (!user) {
       throw new BadRequestException('User not found');
     }
 
     if (!user.isVerified) {
-      await this.usersService.activateUser(user.phoneNumber);
+      await this.usersService.update(user.id, { isVerified: true });
       user.isVerified = true;
     }
 
@@ -114,7 +126,7 @@ export class AuthService {
       status: 'Active'
     });
 
-    const otpCode = await this.otpService.generateOtp(user.phoneNumber);
+    const otpCode = await this.otpService.generateOtp(user.phoneNumber, 'SMS', 'REGISTER');
 
     return {
       success: true,
@@ -128,8 +140,18 @@ export class AuthService {
   }
 
   async verifyOtp(verifyOtpDto: VerifyOtpDto) {
-    await this.otpService.verifyOtp(verifyOtpDto.phoneNumber, verifyOtpDto.otpCode);
-    await this.usersService.activateUser(verifyOtpDto.phoneNumber);
+    await this.otpService.verifyOtp(verifyOtpDto.identifier, verifyOtpDto.otp, verifyOtpDto.purpose);
+    
+    let user;
+    if (verifyOtpDto.identifier.includes('@')) {
+      user = await this.usersService.findByEmail(verifyOtpDto.identifier);
+    } else {
+      user = await this.usersService.findByPhone(verifyOtpDto.identifier);
+    }
+    
+    if (user && !user.isVerified) {
+      await this.usersService.update(user.id, { isVerified: true });
+    }
 
     return {
       success: true,

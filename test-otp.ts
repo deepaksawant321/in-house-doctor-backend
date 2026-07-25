@@ -19,7 +19,9 @@ AppDataSource.initialize()
     console.log('Connected to DB');
     const otp = AppDataSource.getRepository(OTPVerification).create({
         phoneNumber: '+919987866321',
-        otpCode: '1234',
+        otpHash: 'hashed_1234',
+        purpose: 'LOGIN',
+        channel: 'SMS',
         expiresAt: new Date()
     });
     await AppDataSource.getRepository(OTPVerification).save(otp);
