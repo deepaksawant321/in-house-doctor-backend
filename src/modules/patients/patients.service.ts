@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Patient } from '../../entities/patient.entity';
@@ -45,6 +45,13 @@ export class PatientsService {
 
   async remove(userId: string, id: string): Promise<void> {
     const patient = await this.findOne(userId, id);
-    await this.patientRepository.remove(patient);
+    try {
+      await this.patientRepository.remove(patient);
+    } catch (e: any) {
+      if (e.number === 547 || e.code === '23503' || (e.message && e.message.includes('FOREIGN KEY'))) { // MSSQL 547, PG 23503
+        throw new ConflictException('Cannot delete patient with active bookings or records');
+      }
+      throw e;
+    }
   }
 }

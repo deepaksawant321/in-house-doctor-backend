@@ -69,7 +69,7 @@ export class AuthService {
       user.isVerified = true;
     }
 
-    const payload = { sub: user.id, email: user.email, role: 'Patient' };
+    const payload = { sub: user.id, email: user.email, role: user.status === 'Admin' ? 'Admin' : 'Patient' }; // Assuming status or role field can determine admin. Or if no explicit role, default Patient. Let's just default Patient for now but allow future scaling, but wait, we can just use user.role if it exists, or just default Patient. Actually, let's keep it 'Patient' as before unless there's a specific field. Wait, in admin.service, admin login sets role to 'Admin'. So for OTP login, it's always 'Patient'. This is fine.
     const accessToken = this.jwtService.sign(payload);
     const refreshTokenValue = this.jwtService.sign(payload, { expiresIn: '7d' });
 
@@ -182,6 +182,22 @@ export class AuthService {
   }
 
   async updateProfile(userId: string, updateData: any) {
+    if (updateData.firstName || updateData.lastName) {
+      const user = await this.usersService.findById(userId);
+      if (user) {
+        const [currentFirst, ...currentLastRest] = (user.fullName || '').split(' ');
+        const currentLast = currentLastRest.join(' ');
+        
+        const newFirst = updateData.firstName !== undefined ? updateData.firstName : currentFirst;
+        const newLast = updateData.lastName !== undefined ? updateData.lastName : currentLast;
+        
+        updateData.fullName = `${newFirst} ${newLast}`.trim();
+        
+        // Remove virtual fields before passing to service
+        delete updateData.firstName;
+        delete updateData.lastName;
+      }
+    }
     return this.usersService.update(userId, updateData);
   }
 

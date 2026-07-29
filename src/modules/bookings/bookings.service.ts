@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Booking } from '../../entities/booking.entity';
@@ -23,6 +23,23 @@ export class BookingsService {
   ) {}
 
   async createBooking(userId: string, createBookingDto: CreateBookingDto): Promise<Booking> {
+    const scheduledDateObj = new Date(createBookingDto.scheduledDate);
+    if (scheduledDateObj < new Date()) {
+      throw new BadRequestException('Scheduled date cannot be in the past');
+    }
+
+    const existing = await this.bookingRepo.findOne({
+      where: {
+        patient: { id: createBookingDto.patientId } as any,
+        scheduledDate: new Date(createBookingDto.scheduledDate),
+        status: 'Pending'
+      }
+    });
+
+    if (existing) {
+      throw new ConflictException('Booking already exists for this patient at the scheduled time');
+    }
+
     const booking = this.bookingRepo.create({
       bookingNo: `BKG-${Date.now()}`,
       user: { id: userId } as any,
@@ -31,7 +48,7 @@ export class BookingsService {
       symptoms: createBookingDto.symptoms,
       serviceId: createBookingDto.serviceId,
       addressId: createBookingDto.addressId,
-      status: 'Created',
+      status: 'Pending',
     } as any);
 
     const savedBooking = await this.bookingRepo.save(booking) as unknown as Booking;
@@ -40,7 +57,7 @@ export class BookingsService {
     await this.historyRepo.save(
       this.historyRepo.create({
         booking: savedBooking,
-        newStatus: 'Created',
+        newStatus: 'Pending',
         remarks: 'Booking created successfully',
       }),
     );
@@ -49,6 +66,7 @@ export class BookingsService {
     await this.notificationRepo.save(
       this.notificationRepo.create({
         booking: savedBooking,
+        user: { id: userId } as any,
         recipient: createBookingDto.patientId,
         notificationType: 'BookingCreated',
         message: `Your booking ${savedBooking.bookingNo} has been created and is pending confirmation.`,
@@ -78,7 +96,7 @@ export class BookingsService {
   async updateStatus(id: string, status: string, remarks?: string): Promise<Booking> {
     const booking = await this.bookingRepo.findOne({
       where: { id },
-      relations: { patient: true },
+      relations: { patient: true, user: true },
     });
     if (!booking) throw new NotFoundException('Booking not found');
 
@@ -95,6 +113,7 @@ export class BookingsService {
     await this.notificationRepo.save(
       this.notificationRepo.create({
         booking,
+        user: booking.user ? { id: booking.user.id } as any : undefined,
         recipient: booking.patient?.id ?? id,
         notificationType: 'BookingStatusUpdate',
         message: `Your booking ${booking.bookingNo} status has been updated to ${status}.${remarks ? ' Remarks: ' + remarks : ''}`,

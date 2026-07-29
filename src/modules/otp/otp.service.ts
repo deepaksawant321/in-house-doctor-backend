@@ -68,7 +68,7 @@ export class OtpService {
     let provider: IOtpProvider = channel === 'EMAIL' ? this.emailProvider : this.smsProvider;
     await provider.sendOtp(target, otpCode);
 
-    return 'OTP_SENT_SUCCESSFULLY';
+    return otpCode;
   }
 
   async verifyOtp(target: string, otpCode: string, purpose: string): Promise<boolean> {

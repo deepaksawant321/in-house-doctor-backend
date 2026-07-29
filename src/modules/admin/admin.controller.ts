@@ -20,9 +20,14 @@ import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 import { VerifyPaymentDto } from './dto/verify-payment.dto';
 import { AssignDoctorDto } from './dto/assign-doctor.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @ApiTags('Admin')
 @Controller('api/admin')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('Admin')
 export class AdminController {
   constructor(
     private readonly adminService: AdminService,
@@ -30,9 +35,11 @@ export class AdminController {
   ) {}
 
   // ─── Auth ────────────────────────────────────────────────────────────────────
-
+  // NOTE: login is exempt from the class-level guards
   @Post('login')
   @HttpCode(HttpStatus.OK)
+  @UseGuards()  // override: no auth needed for admin login
+  @Roles()      // override: no role check for login
   @ApiOperation({ summary: 'Admin login with email & password' })
   async login(@Body() adminLoginDto: AdminLoginDto) {
     return this.adminService.login(adminLoginDto, this.jwtService);
@@ -41,16 +48,12 @@ export class AdminController {
   // ─── Dashboard ───────────────────────────────────────────────────────────────
 
   @Get('dashboard/stats')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get dashboard statistics' })
   async getDashboardStats() {
     return this.adminService.getDashboardStats();
   }
 
   @Get('dashboard/trends')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get dashboard trends for charts' })
   async getDashboardTrends() {
     return this.adminService.getDashboardTrends();
@@ -59,8 +62,6 @@ export class AdminController {
   // ─── Users ───────────────────────────────────────────────────────────────────
 
   @Get('users')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get all registered patients/users' })
   async getAllUsers() {
     return this.adminService.getAllUsers();
@@ -69,16 +70,12 @@ export class AdminController {
   // ─── Doctors ─────────────────────────────────────────────────────────────────
 
   @Get('doctors')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get all doctors' })
   async getAllDoctors(@Query('status') status?: string) {
     return this.adminService.getAllDoctors(status);
   }
 
   @Patch('doctors/:id/toggle-status')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Toggle doctor active/inactive status' })
   async toggleDoctorStatus(@Param('id') id: string, @Request() req: any) {
     return this.adminService.toggleDoctorStatus(id, req.user.sub);
@@ -87,8 +84,6 @@ export class AdminController {
   // ─── Bookings ────────────────────────────────────────────────────────────────
 
   @Get('bookings')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get all bookings' })
   async getAllBookings(
     @Query('status') status?: string,
@@ -99,8 +94,6 @@ export class AdminController {
   }
 
   @Patch('bookings/:id/status')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Update booking status (e.g. Confirmed, Cancelled, Completed)' })
   async updateBookingStatus(
     @Param('id') id: string,
@@ -113,8 +106,6 @@ export class AdminController {
   // ─── Payments ────────────────────────────────────────────────────────────────
 
   @Get('payments')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get all payments' })
   async getAllPayments(
     @Query('status') status?: string,
@@ -125,8 +116,6 @@ export class AdminController {
   }
 
   @Patch('payments/:id/verify')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Manually verify a payment as Success or Rejected' })
   async verifyPayment(@Param('id') id: string, @Body() dto: VerifyPaymentDto, @Request() req: any) {
     return this.adminService.verifyPayment(id, dto.status, req.user.sub, dto.remarks);
@@ -137,8 +126,6 @@ export class AdminController {
   // ─── Assignments ─────────────────────────────────────────────────────────────
 
   @Post('assignments')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Assign a doctor to a booking' })
   async assignDoctor(@Request() req: any, @Body() dto: AssignDoctorDto) {
     return {
@@ -148,16 +135,12 @@ export class AdminController {
   }
 
   @Get('assignments')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get all doctor assignments' })
   async getAllAssignments() {
     return this.adminService.getAllAssignments();
   }
 
   @Patch('assignments/:id/revoke')
-  @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Revoke a doctor assignment' })
   async revokeAssignment(@Param('id') id: string) {
     return {

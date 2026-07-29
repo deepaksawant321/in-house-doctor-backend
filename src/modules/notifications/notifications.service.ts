@@ -53,7 +53,10 @@ export class NotificationsService {
 
   async getMyNotifications(userId: string): Promise<Notification[]> {
     return this.notificationRepo.find({
-      where: { user: { id: userId } },
+      where: [
+        { user: { id: userId } },
+        { recipient: userId } // fallback if recipient ID holds the user ID or patient ID
+      ],
       order: { sentDate: 'DESC' },
     });
   }

@@ -1,15 +1,20 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, IsOptional, IsNumber } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsNumber, Min, Max, MinLength } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 export class CreatePatientDto {
   @ApiProperty({ example: 'John Doe', description: 'Full name of the patient' })
   @IsNotEmpty()
   @IsString()
+  @Transform(({ value }) => value?.trim())
+  @MinLength(2)
   fullName: string;
 
   @ApiProperty({ example: 30, description: 'Age of the patient', required: false })
   @IsOptional()
   @IsNumber()
+  @Min(0)
+  @Max(150)
   age?: number;
 
   @ApiProperty({ example: 'Male', description: 'Gender of the patient', required: false })
