@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, Logger, BadRequestException, ConflictException } from '@nestjs/common';
+import { MailerService } from '@nestjs-modules/mailer';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Booking } from '../../entities/booking.entity';
@@ -20,6 +21,7 @@ export class BookingsService {
     private prescriptionRepo: Repository<Prescription>,
     @InjectRepository(Notification)
     private notificationRepo: Repository<Notification>,
+    private readonly mailerService: MailerService,
   ) {}
 
   async createBooking(userId: string, createBookingDto: CreateBookingDto): Promise<Booking> {
@@ -75,6 +77,20 @@ export class BookingsService {
     );
 
     this.logger.log(`Booking ${savedBooking.bookingNo} created for user ${userId} and patient ${createBookingDto.patientId}`);
+    // Send Email to User
+    try {
+      const user = await this.bookingRepo.manager.query(`SELECT email FROM "user" WHERE id = $1`, [userId]);
+      if (user && user[0] && user[0].email) {
+        await this.mailerService.sendMail({
+          to: user[0].email,
+          subject: `Booking Confirmed - ${savedBooking.bookingNo}`,
+          text: `Dear Patient,\n\nYour booking ${savedBooking.bookingNo} has been successfully created and is currently pending confirmation. We will notify you once a doctor is assigned.\n\nThank you,\nInHouse Doctor Team`
+        });
+      }
+    } catch (e) {
+      this.logger.error('Failed to send booking confirmation email', e);
+    }
+
     return savedBooking;
   }
 
@@ -101,6 +117,25 @@ export class BookingsService {
     if (!booking) throw new NotFoundException('Booking not found');
 
     const oldStatus = booking.status;
+
+    // Send Email to User on Status Update
+    try {
+      const user = await this.bookingRepo.manager.query(`
+        SELECT u.email FROM "user" u 
+        JOIN booking b ON b."userId" = u.id 
+        WHERE b.id = $1
+      `, [id]);
+      if (user && user[0] && user[0].email) {
+        await this.mailerService.sendMail({
+          to: user[0].email,
+          subject: `Booking Status Update - ${booking.bookingNo}`,
+          text: `Dear Patient,\n\nThe status of your booking ${booking.bookingNo} has been updated to: ${status}.\n\nRemarks: ${remarks || 'None'}\n\nThank you,\nInHouse Doctor Team`
+        });
+      }
+    } catch (e) {
+      this.logger.error('Failed to send status update email', e);
+    }
+
     booking.status = status;
     await this.bookingRepo.save(booking);
 

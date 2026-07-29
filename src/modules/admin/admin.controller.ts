@@ -22,12 +22,13 @@ import { AssignDoctorDto } from './dto/assign-doctor.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 
 @ApiTags('Admin')
 @Controller('api/admin')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('Admin')
+@Roles('Admin', 'SuperAdmin')
 export class AdminController {
   constructor(
     private readonly adminService: AdminService,
@@ -38,7 +39,7 @@ export class AdminController {
   // NOTE: login is exempt from the class-level guards
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @UseGuards()  // override: no auth needed for admin login
+  @Public()
   @Roles()      // override: no role check for login
   @ApiOperation({ summary: 'Admin login with email & password' })
   async login(@Body() adminLoginDto: AdminLoginDto) {

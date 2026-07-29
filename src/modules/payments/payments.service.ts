@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { MailerService } from '@nestjs-modules/mailer';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Payment } from '../../entities/payment.entity';
@@ -17,6 +18,7 @@ export class PaymentsService {
     private bookingRepo: Repository<Booking>,
     @InjectRepository(Notification)
     private notificationRepo: Repository<Notification>,
+    private readonly mailerService: MailerService,
   ) {}
 
   async initiatePayment(initiatePaymentDto: InitiatePaymentDto): Promise<Payment> {
@@ -108,6 +110,24 @@ export class PaymentsService {
     payment.verifiedBy = verifiedByAdminId;
     payment.verifiedDate = new Date();
     payment.remarks = remarks || '';
+
+    // Send Email to User on Payment Verification
+    try {
+      const user = await this.paymentRepo.manager.query(`
+        SELECT u.email FROM "user" u 
+        JOIN booking b ON b."userId" = u.id 
+        WHERE b.id = $1
+      `, [payment.booking.id]);
+      if (user && user[0] && user[0].email) {
+        await this.mailerService.sendMail({
+          to: user[0].email,
+          subject: `Payment ${status} - Booking ${payment.booking.bookingNo}`,
+          text: `Dear Patient,\n\nYour payment of ₹${payment.amount} for booking ${payment.booking.bookingNo} has been marked as ${status}.\n\nRemarks: ${remarks || 'None'}\n\nThank you,\nInHouse Doctor Team`
+        });
+      }
+    } catch (e) {
+      this.logger.error('Failed to send payment verification email', e);
+    }
 
     return this.paymentRepo.save(payment);
   }

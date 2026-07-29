@@ -68,12 +68,22 @@ export class AdminService {
   // ─── Auth ────────────────────────────────────────────────────────────────────
 
   async login(adminLoginDto: AdminLoginDto, jwtService: JwtService) {
+    console.log('Login attempt for admin:', adminLoginDto.email);
     const admin = await this.adminRepo.findOne({
-      where: { email: adminLoginDto.email, isActive: true },
+      where: { email: adminLoginDto.email },
     });
-    if (!admin) throw new UnauthorizedException('Invalid credentials');
+    console.log('Admin found in DB:', admin ? { id: admin.id, email: admin.email, isActive: admin.isActive, hash: admin.passwordHash } : null);
+    if (!admin) {
+      console.log('No admin found with email:', adminLoginDto.email);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    if (!admin.isActive) {
+      console.log('Admin is not active');
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
     const passwordMatch = await bcrypt.compare(adminLoginDto.password, admin.passwordHash);
+    console.log('Password match:', passwordMatch);
     if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
 
     const payload = { sub: admin.id, email: admin.email, role: admin.roleName };
