@@ -19,6 +19,7 @@ import { Setting } from '../../entities/setting.entity';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { DoctorAssignment } from '../../entities/doctor-assignment.entity';
 import { AssignDoctorDto } from './dto/assign-doctor.dto';
+import { EmailService } from '../../common/email/email.service';
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
@@ -40,6 +41,7 @@ export class AdminService {
     private settingRepo: Repository<Setting>,
     @InjectRepository(DoctorAssignment)
     private assignmentRepo: Repository<DoctorAssignment>,
+    private readonly emailService: EmailService,
   ) {}
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -236,6 +238,20 @@ export class AdminService {
     });
 
     this.logger.log(`Booking ${bookingId} status updated to ${status} by admin ${adminId}.`);
+
+    // Email the user whose booking was updated (non-blocking)
+    try {
+      const bookingWithUser = await this.bookingRepo.findOne({
+        where: { id: bookingId },
+        relations: { user: true }
+      });
+      if (bookingWithUser?.user?.email) {
+        await this.emailService.sendBookingStatusUpdate(bookingWithUser.user.email, booking.bookingNo, status, remarks);
+      }
+    } catch (e) {
+      this.logger.error('Failed to send booking status email', e);
+    }
+
     return { success: true, message: `Booking status updated to ${status}`, data: booking };
   }
 
@@ -293,6 +309,26 @@ export class AdminService {
     });
 
     this.logger.log(`Payment ${paymentId} verified as ${status} by admin ${adminId}.`);
+
+    // Email the user whose payment was verified (non-blocking)
+    try {
+      const paymentWithUser = await this.paymentRepo.findOne({
+        where: { id: paymentId },
+        relations: { booking: { user: true } }
+      });
+      if (paymentWithUser?.booking?.user?.email) {
+        await this.emailService.sendPaymentVerified(
+          paymentWithUser.booking.user.email,
+          payment.booking.bookingNo,
+          Number(payment.amount),
+          status,
+          remarks,
+        );
+      }
+    } catch (e) {
+      this.logger.error('Failed to send payment verification email', e);
+    }
+
     return { success: true, message: `Payment marked as ${status}`, data: payment };
   }
 
@@ -375,6 +411,26 @@ export class AdminService {
     await this.bookingRepo.save(booking);
 
     this.logger.log(`Doctor ${doctor.id} assigned to booking ${booking.id}`);
+
+    // Email the user about doctor assignment (non-blocking)
+    try {
+      const bookingWithUser = await this.bookingRepo.findOne({
+        where: { id: booking.id },
+        relations: { user: true }
+      });
+      if (bookingWithUser?.user?.email) {
+        const scheduledDateStr = new Date(booking.scheduledDate).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' });
+        await this.emailService.sendDoctorAssigned(
+          bookingWithUser.user.email,
+          booking.bookingNo,
+          doctor.name,
+          scheduledDateStr,
+        );
+      }
+    } catch (e) {
+      this.logger.error('Failed to send doctor assignment email', e);
+    }
+
     return saved;
   }
 
@@ -394,10 +450,12 @@ export class AdminService {
   }
 
   async revokeAssignment(assignmentId: string): Promise<DoctorAssignment> {
-    const assignment = await this.assignmentRepo.findOne({
-      where: { id: assignmentId },
-      relations: { booking: true },
-    });
+    const assignment = await this.assignmentRepo.createQueryBuilder('assignment')
+      .leftJoinAndSelect('assignment.booking', 'booking')
+      .leftJoinAndSelect('booking.user', 'user')
+      .where('assignment.id = :id', { id: assignmentId })
+      .orWhere('booking.id = :id AND assignment.status = :status', { id: assignmentId, status: 'Active' })
+      .getOne();
     if (!assignment) throw new NotFoundException('Assignment not found');
 
     assignment.status = 'Revoked';
@@ -407,6 +465,15 @@ export class AdminService {
     if (booking) {
       booking.status = 'PaymentVerified';
       await this.bookingRepo.save(booking);
+    }
+
+    // Email the user that doctor was revoked (non-blocking)
+    try {
+      if (assignment.booking?.user?.email && booking?.bookingNo) {
+        await this.emailService.sendDoctorRevoked(assignment.booking.user.email, booking.bookingNo);
+      }
+    } catch (e) {
+      this.logger.error('Failed to send doctor revocation email', e);
     }
 
     return assignment;

@@ -23,6 +23,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { DoctorAvailabilityModule } from './modules/doctor-availability/doctor-availability.module';
 import { MedicalRecordsModule } from './modules/medical-records/medical-records.module';
+import { EmailModule } from './common/email/email.module';
 
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
@@ -74,6 +75,7 @@ import { join } from 'path';
     AuditLogsModule,
     DoctorAvailabilityModule,
     MedicalRecordsModule,
+    EmailModule,
   ],
   controllers: [AppController],
   providers: [AppService],

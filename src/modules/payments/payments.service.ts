@@ -1,11 +1,11 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
-import { MailerService } from '@nestjs-modules/mailer';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Payment } from '../../entities/payment.entity';
 import { Booking } from '../../entities/booking.entity';
 import { Notification } from '../../entities/notification.entity';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
+import { EmailService } from '../../common/email/email.service';
 
 @Injectable()
 export class PaymentsService {
@@ -18,7 +18,7 @@ export class PaymentsService {
     private bookingRepo: Repository<Booking>,
     @InjectRepository(Notification)
     private notificationRepo: Repository<Notification>,
-    private readonly mailerService: MailerService,
+    private readonly emailService: EmailService,
   ) {}
 
   async initiatePayment(initiatePaymentDto: InitiatePaymentDto): Promise<Payment> {
@@ -98,8 +98,20 @@ export class PaymentsService {
 
     payment.screenshotPath = `/uploads/payments/${file.filename}`;
     payment.status = 'Pending Verification';
-    
-    return this.paymentRepo.save(payment);
+    const savedPayment = await this.paymentRepo.save(payment);
+
+    // Notify admin that proof has been uploaded (non-blocking)
+    try {
+      await this.emailService.sendAdminPaymentProofUploaded(
+        booking.bookingNo,
+        Number(savedPayment.amount),
+        savedPayment.transactionId,
+      );
+    } catch (e) {
+      this.logger.error('Failed to send payment proof alert to admin', e);
+    }
+
+    return savedPayment;
   }
 
   async verifyPayment(paymentId: string, verifiedByAdminId: string, status: string, remarks?: string): Promise<Payment> {
@@ -111,19 +123,20 @@ export class PaymentsService {
     payment.verifiedDate = new Date();
     payment.remarks = remarks || '';
 
-    // Send Email to User on Payment Verification
+    // Email the user about payment verification result (non-blocking)
     try {
-      const user = await this.paymentRepo.manager.query(`
-        SELECT u.email FROM "user" u 
-        JOIN booking b ON b."userId" = u.id 
-        WHERE b.id = $1
-      `, [payment.booking.id]);
-      if (user && user[0] && user[0].email) {
-        await this.mailerService.sendMail({
-          to: user[0].email,
-          subject: `Payment ${status} - Booking ${payment.booking.bookingNo}`,
-          text: `Dear Patient,\n\nYour payment of ₹${payment.amount} for booking ${payment.booking.bookingNo} has been marked as ${status}.\n\nRemarks: ${remarks || 'None'}\n\nThank you,\nInHouse Doctor Team`
-        });
+      const paymentWithUser = await this.paymentRepo.findOne({
+        where: { id: paymentId },
+        relations: { booking: { user: true } }
+      });
+      if (paymentWithUser?.booking?.user?.email) {
+        await this.emailService.sendPaymentVerified(
+          paymentWithUser.booking.user.email,
+          payment.booking.bookingNo,
+          Number(payment.amount),
+          status,
+          remarks,
+        );
       }
     } catch (e) {
       this.logger.error('Failed to send payment verification email', e);
