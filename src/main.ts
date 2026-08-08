@@ -14,7 +14,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     logger: WinstonModule.createLogger(winstonConfig),
   });
-  
+
   // Enable trusting the reverse proxy (Nginx) for express-rate-limit to work correctly
   app.set('trust proxy', 1);
 
@@ -24,18 +24,58 @@ async function bootstrap() {
   app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
   }));
-  
-  const corsOrigin = configService.get('CORS_ORIGIN');
-  const allowedOrigins = corsOrigin ? corsOrigin.split(',') : ['http://localhost:3000'];
-  if (process.env.NODE_ENV !== 'production') {
+
+  const corsOriginsStr = (configService.get('CORS_ORIGINS') as string) || '';
+  const allowedOrigins = corsOriginsStr
+    .split(',')
+    .map((origin: string) => origin.trim())
+    .filter(Boolean);
+
+  if (process.env.NODE_ENV !== 'production' && !allowedOrigins.includes('http://localhost:3000')) {
     allowedOrigins.push('http://localhost:3000');
   }
 
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (origin: string | undefined, callback: (error: Error | null, allow?: boolean) => void) => {
+      // Allow server-to-server requests without Origin
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Temporary verbose logging for development/debugging, remove in production
+      console.log(`Incoming Origin: ${origin}`);
+      console.log(`Allowed Origins: ${allowedOrigins.join(', ')}`);
+      console.log(`CORS Result: Blocked`);
+
+      return callback(
+        new Error(`CORS blocked for origin: ${origin}`),
+        false,
+      );
+    },
+    methods: [
+      'GET',
+      'HEAD',
+      'POST',
+      'PUT',
+      'PATCH',
+      'DELETE',
+      'OPTIONS',
+    ],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'Origin',
+      'X-Requested-With',
+    ],
     credentials: true,
+    optionsSuccessStatus: 204,
   });
-  
+
   app.use(
     rateLimit({
       windowMs: 15 * 60 * 1000, // 15 minutes
