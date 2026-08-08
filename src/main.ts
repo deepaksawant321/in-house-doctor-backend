@@ -25,7 +25,7 @@ async function bootstrap() {
     crossOriginResourcePolicy: { policy: "cross-origin" },
   }));
 
-  const corsOriginsStr = (configService.get('CORS_ORIGINS') as string) || '';
+  const corsOriginsStr = (configService.get('CORS_ORIGINS') as string) || 'https://doctordoorstep.com,https://www.doctordoorstep.com,https://admin.doctordoorstep.com';
   const allowedOrigins = corsOriginsStr
     .split(',')
     .map((origin: string) => origin.trim())
