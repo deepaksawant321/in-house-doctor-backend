@@ -3,15 +3,18 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { DoctorAvailabilityService } from './doctor-availability.service';
 import { CreateAvailabilityDto } from './dto/create-availability.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @ApiTags('DoctorAvailability')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('api/doctor-availability')
 export class DoctorAvailabilityController {
   constructor(private readonly availabilityService: DoctorAvailabilityService) {}
 
   @Post()
+  @Roles('Admin', 'SuperAdmin')
   @ApiOperation({ summary: 'Create a new availability slot for a doctor' })
   create(@Body() dto: CreateAvailabilityDto) {
     return this.availabilityService.create(dto);
@@ -24,6 +27,7 @@ export class DoctorAvailabilityController {
   }
 
   @Delete(':id')
+  @Roles('Admin', 'SuperAdmin')
   @ApiOperation({ summary: 'Delete an availability slot' })
   remove(@Param('id') id: string) {
     return this.availabilityService.remove(id);

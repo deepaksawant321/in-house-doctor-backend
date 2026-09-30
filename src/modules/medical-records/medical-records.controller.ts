@@ -1,11 +1,15 @@
 import { Controller, Get, Post, Body, Param, Delete, UseGuards, Request, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
+import { FileSignatureInterceptor } from '../../common/utils/file-signature.interceptor';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { MedicalRecordsService } from './medical-records.service';
 import { UploadRecordDto } from './dto/upload-record.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { documentFileFilter, MAX_UPLOAD_BYTES } from '../../common/utils/upload';
 import * as fs from 'fs';
 
 const uploadDir = './uploads/MedicalRecords';
@@ -15,7 +19,8 @@ if (!fs.existsSync(uploadDir)) {
 
 @ApiTags('MedicalRecords')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('Patient')
 @Controller('api/medical-records')
 export class MedicalRecordsController {
   constructor(private readonly MedicalRecordsService: MedicalRecordsService) {}
@@ -31,8 +36,10 @@ export class MedicalRecordsController {
         const ext = extname(file.originalname);
         cb(null, `${uniqueSuffix}${ext}`);
       }
-    })
-  }))
+    }),
+    limits: { fileSize: MAX_UPLOAD_BYTES },
+    fileFilter: documentFileFilter,
+  }), FileSignatureInterceptor)
   upload(@Request() req: any, @UploadedFile() file: Express.Multer.File, @Body() uploadRecordDto: UploadRecordDto) {
     return this.MedicalRecordsService.uploadRecord(req.user.id, file, uploadRecordDto);
   }

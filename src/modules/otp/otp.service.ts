@@ -21,6 +21,15 @@ export class OtpService {
     private readonly smsProvider: SmsOtpProvider,
   ) {}
 
+  // In-memory brute-force guard: max 5 failed verifications per target+purpose in 10 minutes
+  private failedAttempts = new Map<string, { count: number; resetAt: number }>();
+  private static readonly MAX_FAILED = 5;
+  private static readonly FAIL_WINDOW_MS = 10 * 60 * 1000;
+
+  private attemptKey(target: string, purpose: string) {
+    return `${target.toLowerCase()}|${purpose}`;
+  }
+
   private hashOtp(otp: string): string {
     return crypto.createHash('sha256').update(otp).digest('hex');
   }
@@ -72,6 +81,12 @@ export class OtpService {
   }
 
   async verifyOtp(target: string, otpCode: string, purpose: string): Promise<boolean> {
+    const key = this.attemptKey(target, purpose);
+    const now = Date.now();
+    const attempts = this.failedAttempts.get(key);
+    if (attempts && attempts.resetAt > now && attempts.count >= OtpService.MAX_FAILED) {
+      throw new BadRequestException('Too many incorrect attempts. Please request a new OTP later.');
+    }
     const otpHash = this.hashOtp(otpCode);
 
     const otpRecord = await this.otpRepo.createQueryBuilder('otp')
@@ -84,8 +99,12 @@ export class OtpService {
       .getOne();
 
     if (!otpRecord) {
+      const current = attempts && attempts.resetAt > now ? attempts : { count: 0, resetAt: now + OtpService.FAIL_WINDOW_MS };
+      current.count += 1;
+      this.failedAttempts.set(key, current);
       throw new BadRequestException('Invalid or expired OTP');
     }
+    this.failedAttempts.delete(key);
 
     otpRecord.isUsed = true;
     otpRecord.verifiedAt = new Date();

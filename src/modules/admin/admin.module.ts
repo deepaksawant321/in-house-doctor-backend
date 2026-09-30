@@ -1,3 +1,4 @@
+import { JwtStrategy } from '../auth/strategies/jwt.strategy';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { JwtModule } from '@nestjs/jwt';
@@ -19,7 +20,7 @@ import { DoctorAssignment } from '../../entities/doctor-assignment.entity';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET') || 'inhousedoctor_secret_key',
+        secret: JwtStrategy.requireSecret(configService),
         signOptions: { expiresIn: '24h' },
       }),
       inject: [ConfigService],

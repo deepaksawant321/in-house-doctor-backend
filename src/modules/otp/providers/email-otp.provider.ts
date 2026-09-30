@@ -9,7 +9,7 @@ export class EmailOtpProvider implements IOtpProvider {
   constructor(private readonly mailerService: MailerService) {}
 
   async sendOtp(target: string, otp: string, templateContext?: any): Promise<boolean> {
-    this.logger.log(`[EmailProvider] Sending OTP to ${target}. OTP Code is: ${otp}`);
+    this.logger.log(`[EmailProvider] Sending OTP to ${target}`);
     
     try {
       await this.mailerService.sendMail({

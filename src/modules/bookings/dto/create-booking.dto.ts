@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsDateString, IsOptional, IsNumber } from 'class-validator';
+import { IsNotEmpty, IsString, IsDateString, IsOptional, IsNumber, MaxLength } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -15,6 +15,12 @@ export class CreateBookingDto {
   @IsDateString()
   // Note: MinDate requires a Date object, IsDateString is a string, so we need a custom validator or just let service validate it. Let's add a custom validator decorator or simply validate in service since DTO transforms strings differently. Actually, a simpler approach is to check it in service to avoid complex custom class-validators for strings. But wait, class-validator has IsFutureDate? No. 
   scheduledDate: string;
+
+  @ApiPropertyOptional({ example: '12:00 PM - 04:00 PM', description: 'Chosen visit time slot (the date column stores the day only)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  preferredTime?: string;
 
   @ApiPropertyOptional({ example: 'Fever and cold for 2 days' })
   @IsOptional()

@@ -1,5 +1,8 @@
+import { BadRequestException } from '@nestjs/common';
+import { MAX_UPLOAD_BYTES } from '../../common/utils/upload';
 import { Controller, Get, Put, Post, Body, UseGuards, Request, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
+import { FileSignatureInterceptor } from '../../common/utils/file-signature.interceptor';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -8,6 +11,12 @@ import { SettingsService } from './settings.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
+
+// The QR image is served publicly, so only raster images (no PDF/SVG/HTML) are accepted
+const imageOnlyFilter = (_req: any, file: Express.Multer.File, cb: (e: Error | null, ok: boolean) => void) =>
+  /\.(png|jpe?g|webp)$/i.test(file.originalname) && /^image\/(png|jpeg|webp)$/.test(file.mimetype)
+    ? cb(null, true)
+    : cb(new BadRequestException('Only PNG, JPG or WEBP images are allowed'), false);
 
 const uploadDir = './uploads/settings';
 if (!fs.existsSync(uploadDir)) {
@@ -21,7 +30,8 @@ export class SettingsController {
 
   @Get()
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin', 'SuperAdmin')
   @ApiOperation({ summary: 'Get platform settings' })
   async getSettings() {
     return this.settingsService.getSettings();
@@ -48,14 +58,15 @@ export class SettingsController {
       filename: (req, file, cb) => {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
         const ext = extname(file.originalname);
-        cb(null, `upi-qr-${uniqueSuffix}${ext}`);
+        cb(null, `upi-qr-${uniqueSuffix}${ext.toLowerCase()}`);
       }
-    })
-  }))
-  async uploadQrCode(@UploadedFile() file: Express.Multer.File, @Request() req: any) {
+    }),
+    limits: { fileSize: MAX_UPLOAD_BYTES },
+    fileFilter: imageOnlyFilter,
+  }), FileSignatureInterceptor)
+  uploadQrCode(@UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('A file is required');
     const fileUrl = `/uploads/settings/${file.filename}`;
-    // Save to settings
-    await this.settingsService.updateSettings({ UPI_QR_CODE: fileUrl }, req.user.sub);
     return {
       success: true,
       data: { fileUrl }

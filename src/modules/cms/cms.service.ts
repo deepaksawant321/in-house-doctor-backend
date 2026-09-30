@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Faq } from '../../entities/faq.entity';
@@ -6,6 +6,17 @@ import { Testimonial } from '../../entities/testimonial.entity';
 import { Service } from '../../entities/service.entity';
 import { CmsBlock } from '../../entities/cms-block.entity';
 import { StaticPage } from '../../entities/static-page.entity';
+
+function requireFields(data: any, fields: string[]) {
+  if (!data || typeof data !== 'object') throw new BadRequestException('Request body is required');
+  const missing = fields.filter((f) => typeof data[f] !== 'string' || !data[f].trim());
+  if (missing.length) throw new BadRequestException('Missing or invalid field(s): ' + missing.join(', '));
+}
+
+function withoutId<T extends object>(data: T): Omit<T, 'id'> {
+  const { id: _id, ...rest } = (data || {}) as any;
+  return rest;
+}
 
 @Injectable()
 export class CmsService {
@@ -34,15 +45,16 @@ export class CmsService {
   }
 
   async createFaq(data: { question: string; answer: string }) {
-    const faq = this.faqRepo.create(data);
+    requireFields(data, ['question','answer']);
+    const faq = this.faqRepo.create(withoutId(data) as any);
     await this.faqRepo.save(faq);
     return { success: true, data: faq };
   }
 
   async updateFaq(id: number, data: Partial<Faq>) {
     const faq = await this.faqRepo.findOne({ where: { id } });
-    if (!faq) throw new Error('Faq not found');
-    Object.assign(faq, data);
+    if (!faq) throw new NotFoundException('Faq not found');
+    Object.assign(faq, withoutId(data));
     await this.faqRepo.save(faq);
     return { success: true, data: faq };
   }
@@ -64,15 +76,16 @@ export class CmsService {
   }
 
   async createTestimonial(data: { name: string; role: string; quote: string; rating?: number }) {
-    const testimonial = this.testimonialRepo.create(data);
+    requireFields(data, ['name','quote']);
+    const testimonial = this.testimonialRepo.create(withoutId(data) as any);
     await this.testimonialRepo.save(testimonial);
     return { success: true, data: testimonial };
   }
 
   async updateTestimonial(id: number, data: Partial<Testimonial>) {
     const testimonial = await this.testimonialRepo.findOne({ where: { id } });
-    if (!testimonial) throw new Error('Testimonial not found');
-    Object.assign(testimonial, data);
+    if (!testimonial) throw new NotFoundException('Testimonial not found');
+    Object.assign(testimonial, withoutId(data));
     await this.testimonialRepo.save(testimonial);
     return { success: true, data: testimonial };
   }
@@ -94,15 +107,16 @@ export class CmsService {
   }
 
   async createService(data: Partial<Service>) {
-    const service = this.serviceRepo.create(data);
+    requireFields(data, ['serviceName']);
+    const service = this.serviceRepo.create(withoutId(data) as any);
     await this.serviceRepo.save(service);
     return { success: true, data: service };
   }
 
   async updateService(id: number, data: Partial<Service>) {
     const service = await this.serviceRepo.findOne({ where: { id } });
-    if (!service) throw new Error('Service not found');
-    Object.assign(service, data);
+    if (!service) throw new NotFoundException('Service not found');
+    Object.assign(service, withoutId(data));
     await this.serviceRepo.save(service);
     return { success: true, data: service };
   }
@@ -124,7 +138,8 @@ export class CmsService {
   }
 
   async createBlock(data: Partial<CmsBlock>) {
-    const block = this.cmsBlockRepo.create(data);
+    requireFields(data, ['title']);
+    const block = this.cmsBlockRepo.create(withoutId(data) as any);
     await this.cmsBlockRepo.save(block);
     return { success: true, data: block };
   }
@@ -132,7 +147,7 @@ export class CmsService {
   async updateBlock(id: number, data: Partial<CmsBlock>) {
     const block = await this.cmsBlockRepo.findOne({ where: { id } });
     if (!block) throw new NotFoundException('Block not found');
-    Object.assign(block, data);
+    Object.assign(block, withoutId(data));
     await this.cmsBlockRepo.save(block);
     return { success: true, data: block };
   }
@@ -155,7 +170,8 @@ export class CmsService {
   }
 
   async createPage(data: Partial<StaticPage>) {
-    const page = this.staticPageRepo.create(data);
+    requireFields(data, ['title','slug','htmlContent']);
+    const page = this.staticPageRepo.create(withoutId(data) as any);
     await this.staticPageRepo.save(page);
     return { success: true, data: page };
   }
@@ -163,7 +179,7 @@ export class CmsService {
   async updatePage(id: number, data: Partial<StaticPage>) {
     const page = await this.staticPageRepo.findOne({ where: { id } });
     if (!page) throw new NotFoundException('Page not found');
-    Object.assign(page, data);
+    Object.assign(page, withoutId(data));
     await this.staticPageRepo.save(page);
     return { success: true, data: page };
   }

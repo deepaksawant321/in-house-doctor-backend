@@ -24,6 +24,8 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module';
 import { DoctorAvailabilityModule } from './modules/doctor-availability/doctor-availability.module';
 import { MedicalRecordsModule } from './modules/medical-records/medical-records.module';
 import { EmailModule } from './common/email/email.module';
+import { ContactModule } from './modules/contact/contact.module';
+import { FilesModule } from './modules/files/files.module';
 
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { join } from 'path';
@@ -31,8 +33,10 @@ import { join } from 'path';
 @Module({
   imports: [
     ServeStaticModule.forRoot({
-      rootPath: join(process.cwd(), 'uploads'),
-      serveRoot: '/uploads',
+      // Only non-sensitive site assets (e.g. the UPI QR image) are public. Prescriptions, payment proofs and
+      // medical records are private and served via the authenticated GET /api/files/:folder/:name endpoint.
+      rootPath: join(process.cwd(), 'uploads', 'settings'),
+      serveRoot: '/uploads/settings',
     }),
     ConfigModule.forRoot({
       isGlobal: true,
@@ -51,7 +55,11 @@ import { join } from 'path';
           },
         },
         defaults: {
-          from: `"No Reply" <${config.get<string>('MAIL_FROM')}>`,
+          // MAIL_FROM may already be a full "Name <address>"; only wrap a bare address
+          from: (() => {
+            const from = config.get<string>('MAIL_FROM') || config.get<string>('SMTP_USER') || '';
+            return from.includes('<') ? from : `"InHouse Doctor" <${from}>`;
+          })(),
         },
       }),
     }),
@@ -76,6 +84,8 @@ import { join } from 'path';
     DoctorAvailabilityModule,
     MedicalRecordsModule,
     EmailModule,
+    ContactModule,
+    FilesModule,
   ],
   controllers: [AppController],
   providers: [AppService],

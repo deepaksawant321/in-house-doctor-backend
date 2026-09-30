@@ -3,6 +3,8 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ServicesService } from './services.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @ApiTags('Services')
 @Controller('api/services')
@@ -20,7 +22,8 @@ export class ServicesController {
 
   @Get('all')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin', 'SuperAdmin')
   @ApiOperation({ summary: 'Get all services including inactive (Admin)' })
   async findAll() {
     return {
@@ -31,7 +34,8 @@ export class ServicesController {
 
   @Post()
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin', 'SuperAdmin')
   @ApiOperation({ summary: 'Create a new medical service (Admin)' })
   async create(@Body() createServiceDto: CreateServiceDto) {
     return {
@@ -43,7 +47,8 @@ export class ServicesController {
 
   @Patch(':id/toggle-status')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin', 'SuperAdmin')
   @ApiOperation({ summary: 'Toggle service active/inactive status (Admin)' })
   async toggleStatus(@Param('id', ParseIntPipe) id: number) {
     return {
@@ -55,7 +60,8 @@ export class ServicesController {
 
   @Patch(':id')
   @ApiBearerAuth()
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('Admin', 'SuperAdmin')
   @ApiOperation({ summary: 'Update a medical service (Admin)' })
   async update(@Param('id', ParseIntPipe) id: number, @Body() updateServiceDto: Partial<CreateServiceDto>) {
     return {

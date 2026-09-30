@@ -20,6 +20,14 @@ async function bootstrap() {
 
   const configService = app.get(require('@nestjs/config').ConfigService);
 
+  // Refuse to boot in production with development-only switches enabled
+  if (process.env.NODE_ENV === 'production') {
+    const unsafe = ['EXPOSE_DEV_OTP', 'MOCK_PAYMENT_GATEWAY'].filter((k) => configService.get(k) === 'true');
+    if (unsafe.length) {
+      throw new Error(`Unsafe production configuration: ${unsafe.join(', ')} must not be "true" when NODE_ENV=production`);
+    }
+  }
+
   // Security
   app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -46,15 +54,8 @@ async function bootstrap() {
         return callback(null, true);
       }
 
-      // Temporary verbose logging for development/debugging, remove in production
-      console.log(`Incoming Origin: ${origin}`);
-      console.log(`Allowed Origins: ${allowedOrigins.join(', ')}`);
-      console.log(`CORS Result: Blocked`);
-
-      return callback(
-        new Error(`CORS blocked for origin: ${origin}`),
-        false,
-      );
+      // Not an allowed origin: omit CORS headers (browser blocks the response)
+      return callback(null, false);
     },
     methods: [
       'GET',
@@ -83,6 +84,19 @@ async function bootstrap() {
     }),
   );
 
+  // Stricter limits on credential / OTP endpoints to slow brute-force and OTP-flooding attacks
+  const authLimitMax = parseInt(configService.get('AUTH_RATE_LIMIT_MAX') || '30', 10);
+  app.use(
+    ['/api/admin/login', '/api/auth/send-otp', '/api/auth/login-with-otp', '/api/auth/verify-otp', '/api/auth/register', '/api/auth/login', '/api/contact'],
+    rateLimit({
+      windowMs: 15 * 60 * 1000,
+      max: authLimitMax,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { success: false, message: 'Too many attempts. Please try again later.' },
+    }),
+  );
+
   // Validation
   app.useGlobalPipes(
     new ValidationPipe({
@@ -95,7 +109,10 @@ async function bootstrap() {
   app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Swagger Documentation
-  setupSwagger(app);
+  // API docs are not exposed in production unless explicitly enabled
+  if (process.env.NODE_ENV !== 'production' || configService.get('SWAGGER_ENABLED') === 'true') {
+    setupSwagger(app);
+  }
 
   const port = configService.get('PORT') || 3001;
   await app.listen(port);

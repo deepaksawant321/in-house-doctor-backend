@@ -64,8 +64,8 @@ export class AdminController {
 
   @Get('users')
   @ApiOperation({ summary: 'Get all registered patients/users' })
-  async getAllUsers() {
-    return this.adminService.getAllUsers();
+  async getAllUsers(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
+    return this.adminService.getAllUsers(page, pageSize);
   }
 
   // ─── Doctors ─────────────────────────────────────────────────────────────────
@@ -74,6 +74,12 @@ export class AdminController {
   @ApiOperation({ summary: 'Get all doctors' })
   async getAllDoctors(@Query('status') status?: string) {
     return this.adminService.getAllDoctors(status);
+  }
+
+  @Get('doctors/:id')
+  @ApiOperation({ summary: 'Get one doctor with full contact details' })
+  async getDoctor(@Param('id') id: string) {
+    return this.adminService.getDoctorById(id);
   }
 
   @Patch('doctors/:id/toggle-status')
@@ -90,8 +96,16 @@ export class AdminController {
     @Query('status') status?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
-    return this.adminService.getAllBookings(status, startDate, endDate);
+    return this.adminService.getAllBookings(status, startDate, endDate, page, pageSize);
+  }
+
+  @Get('bookings/:id')
+  @ApiOperation({ summary: 'Get one booking with patient, doctor, payment, address and service' })
+  async getBookingDetail(@Param('id') id: string) {
+    return this.adminService.getBookingDetail(id);
   }
 
   @Patch('bookings/:id/status')
@@ -112,8 +126,10 @@ export class AdminController {
     @Query('status') status?: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
   ) {
-    return this.adminService.getAllPayments(status, startDate, endDate);
+    return this.adminService.getAllPayments(status, startDate, endDate, page, pageSize);
   }
 
   @Patch('payments/:id/verify')

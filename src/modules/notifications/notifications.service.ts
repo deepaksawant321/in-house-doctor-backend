@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { isAdminUser } from '../../common/utils/roles';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Notification } from '../../entities/notification.entity';
@@ -44,7 +45,11 @@ export class NotificationsService {
     return saved;
   }
 
-  async getNotificationsForBooking(bookingId: string): Promise<Notification[]> {
+  async getNotificationsForBooking(user: { id: string; role?: string }, bookingId: string): Promise<Notification[]> {
+    if (!/^\d{1,18}$/.test(String(bookingId))) throw new BadRequestException('Invalid booking id');
+    const booking = await this.notificationRepo.manager.findOne(Booking, { where: { id: bookingId }, relations: { user: true } });
+    if (!booking) throw new NotFoundException('Booking not found');
+    if (!isAdminUser(user) && booking.user?.id !== user.id) throw new ForbiddenException('You do not have access to this booking');
     return this.notificationRepo.find({
       where: { booking: { id: bookingId } },
       order: { sentDate: 'DESC' },

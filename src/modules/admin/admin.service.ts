@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, FindOptionsWhere } from 'typeorm';
+import { Repository, Between, FindOptionsWhere, In, IsNull, MoreThanOrEqual } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { AdminUser } from '../../entities/admin-user.entity';
@@ -19,7 +19,11 @@ import { Setting } from '../../entities/setting.entity';
 import { AdminLoginDto } from './dto/admin-login.dto';
 import { DoctorAssignment } from '../../entities/doctor-assignment.entity';
 import { AssignDoctorDto } from './dto/assign-doctor.dto';
+import { parsePaging } from '../../common/utils/pagination';
 import { EmailService } from '../../common/email/email.service';
+import { UserAddress } from '../../entities/user-address.entity';
+import { Service } from '../../entities/service.entity';
+import { BookingStatusHistory } from '../../entities/booking-status-history.entity';
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
@@ -70,22 +74,17 @@ export class AdminService {
   // ─── Auth ────────────────────────────────────────────────────────────────────
 
   async login(adminLoginDto: AdminLoginDto, jwtService: JwtService) {
-    console.log('Login attempt for admin:', adminLoginDto.email);
     const admin = await this.adminRepo.findOne({
       where: { email: adminLoginDto.email },
     });
-    console.log('Admin found in DB:', admin ? { id: admin.id, email: admin.email, isActive: admin.isActive, hash: admin.passwordHash } : null);
     if (!admin) {
-      console.log('No admin found with email:', adminLoginDto.email);
       throw new UnauthorizedException('Invalid credentials');
     }
     if (!admin.isActive) {
-      console.log('Admin is not active');
       throw new UnauthorizedException('Invalid credentials');
     }
 
     const passwordMatch = await bcrypt.compare(adminLoginDto.password, admin.passwordHash);
-    console.log('Password match:', passwordMatch);
     if (!passwordMatch) throw new UnauthorizedException('Invalid credentials');
 
     const payload = { sub: admin.id, email: admin.email, role: admin.roleName };
@@ -104,18 +103,19 @@ export class AdminService {
   // ─── Dashboard Stats ─────────────────────────────────────────────────────────
 
   async getDashboardStats() {
-    const [totalUsers, totalDoctors, totalBookings, pendingBookings, totalPayments] =
+    const [totalUsers, totalDoctors, totalBookings, pendingBookings, totalPayments, completedVisits] =
       await Promise.all([
         this.userRepo.count(),
         this.doctorRepo.count({ where: { status: 'Active' } }),
         this.bookingRepo.count(),
         this.bookingRepo.count({ where: { status: 'Pending' } }),
         this.paymentRepo.count({ where: { status: 'Success' } }),
+        this.bookingRepo.count({ where: { status: In(['Completed', 'VisitCompleted']) } }),
       ]);
 
     return {
       success: true,
-      data: { totalUsers, totalDoctors, totalBookings, pendingBookings, completedPayments: totalPayments },
+      data: { totalUsers, totalDoctors, totalBookings, pendingBookings, completedPayments: totalPayments, completedVisits },
     };
   }
 
@@ -129,8 +129,16 @@ export class AdminService {
       return d;
     });
 
-    const bookings = await this.bookingRepo.find();
-    const payments = await this.paymentRepo.find({ where: { status: 'Success' } });
+    // Only the last 7 days are needed — don't load the whole tables
+    const windowStart = last7Days[0];
+    const bookings = await this.bookingRepo.find({ where: { createdDate: MoreThanOrEqual(windowStart) } });
+    // Payments without a verifiedDate (auto-confirmed) are counted as today, as before
+    const payments = await this.paymentRepo.find({
+      where: [
+        { status: 'Success', verifiedDate: MoreThanOrEqual(windowStart) },
+        { status: 'Success', verifiedDate: IsNull() },
+      ],
+    });
 
     const bookingsTrend = last7Days.map((date) => {
       const count = bookings.filter((b) => {
@@ -151,10 +159,14 @@ export class AdminService {
     });
 
     const doctors = await this.doctorRepo.find({ where: { status: 'Active' } });
-    const doctorUtilization = doctors.map(doc => {
-      const docBookings = bookings.filter(b => b.doctor && b.doctor.id === doc.id);
-      return { name: doc.name.split(' ')[0], utilization: docBookings.length };
-    }).sort((a, b) => b.utilization - a.utilization).slice(0, 5); // Top 5 active doctors
+    const doctorUtilization = (
+      await Promise.all(
+        doctors.map(async (doc) => ({
+          name: (doc.name || '').split(' ')[0],
+          utilization: await this.bookingRepo.count({ where: { doctor: { id: doc.id } } }),
+        })),
+      )
+    ).sort((a, b) => b.utilization - a.utilization).slice(0, 5); // Top 5 active doctors
 
     return {
       success: true,
@@ -164,9 +176,10 @@ export class AdminService {
 
   // ─── Users ───────────────────────────────────────────────────────────────────
 
-  async getAllUsers() {
-    const users = await this.userRepo.find({ order: { createdDate: 'DESC' } });
-    return { success: true, data: users };
+  async getAllUsers(page?: string, pageSize?: string) {
+    const paging = parsePaging(page, pageSize);
+    const [users, total] = await this.userRepo.findAndCount({ order: { createdDate: 'DESC' }, skip: paging.skip, take: paging.take });
+    return { success: true, data: users, total, page: paging.page, pageSize: paging.pageSize };
   }
 
   // ─── Doctors ─────────────────────────────────────────────────────────────────
@@ -202,7 +215,8 @@ export class AdminService {
 
   // ─── Bookings ────────────────────────────────────────────────────────────────
 
-  async getAllBookings(status?: string, startDate?: string, endDate?: string) {
+  async getAllBookings(status?: string, startDate?: string, endDate?: string, page?: string, pageSize?: string) {
+    const paging = parsePaging(page, pageSize);
     const where: FindOptionsWhere<Booking> = {};
     if (status && status !== 'All') where.status = status;
     if (startDate && endDate) {
@@ -212,12 +226,50 @@ export class AdminService {
       where.createdDate = Between(start, end);
     }
 
-    const bookings = await this.bookingRepo.find({
+    const [bookings, total] = await this.bookingRepo.findAndCount({
       where,
       relations: { patient: true, doctor: true },
-      order: { createdDate: 'DESC' },
+      order: { createdDate: 'DESC', id: 'DESC' },
+      skip: paging.skip,
+      take: paging.take,
     });
-    return { success: true, data: bookings };
+    return { success: true, data: bookings, total, page: paging.page, pageSize: paging.pageSize };
+  }
+
+  async getDoctorById(id: string) {
+    if (!/^[0-9]{1,18}$/.test(id)) throw new BadRequestException('Invalid doctor id');
+    const doctor = await this.doctorRepo.findOne({ where: { id } });
+    if (!doctor) throw new NotFoundException('Doctor not found');
+    return { success: true, data: doctor };
+  }
+
+  async getBookingDetail(id: string) {
+    if (!/^[0-9]{1,18}$/.test(id)) throw new BadRequestException('Invalid booking id');
+    const booking = await this.bookingRepo.findOne({
+      where: { id },
+      relations: { patient: true, doctor: true, user: true },
+    });
+    if (!booking) throw new NotFoundException('Booking not found');
+
+    const manager = this.bookingRepo.manager;
+    const [payment, address, service, history] = await Promise.all([
+      this.paymentRepo.findOne({ where: { booking: { id } } }),
+      booking.addressId ? manager.findOne(UserAddress, { where: { id: booking.addressId } }) : Promise.resolve(null),
+      booking.serviceId ? manager.findOne(Service, { where: { id: booking.serviceId } }) : Promise.resolve(null),
+      manager.find(BookingStatusHistory, { where: { booking: { id } } as any, order: { changedDate: 'DESC' } as any }),
+    ]);
+
+    return {
+      success: true,
+      data: {
+        ...booking,
+        user: booking.user ? { id: booking.user.id, fullName: booking.user.fullName, email: booking.user.email, phoneNumber: booking.user.phoneNumber } : null,
+        payment,
+        address,
+        service,
+        history,
+      },
+    };
   }
 
   async updateBookingStatus(bookingId: string, status: string, adminId: string, remarks?: string) {
@@ -257,7 +309,8 @@ export class AdminService {
 
   // ─── Payments ────────────────────────────────────────────────────────────────
 
-  async getAllPayments(status?: string, startDate?: string, endDate?: string) {
+  async getAllPayments(status?: string, startDate?: string, endDate?: string, page?: string, pageSize?: string) {
+    const paging = parsePaging(page, pageSize);
     const where: FindOptionsWhere<Payment> = {};
     if (status && status !== 'All') where.status = status;
     if (startDate && endDate) {
@@ -268,12 +321,15 @@ export class AdminService {
       where.verifiedDate = Between(start, end);
     }
 
-    const payments = await this.paymentRepo.find({
+    const [payments, total] = await this.paymentRepo.findAndCount({
       where,
       relations: { booking: { patient: true } },
-      order: { verifiedDate: 'DESC' },
+      skip: paging.skip,
+      take: paging.take,
+      // Newest first. (Ordering by verifiedDate pushed unverified payments — the ones awaiting action — to the end.)
+      order: { id: 'DESC' },
     });
-    return { success: true, data: payments };
+    return { success: true, data: payments, total, page: paging.page, pageSize: paging.pageSize };
   }
 
   async verifyPayment(paymentId: string, status: string, adminId: string, remarks?: string) {
@@ -288,12 +344,15 @@ export class AdminService {
     payment.status = status;
     payment.remarks = remarks ?? payment.remarks;
     payment.verifiedDate = new Date();
+    payment.verifiedBy = adminId;
     await this.paymentRepo.save(payment);
+    if (payment.booking?.id) await this.bookingRepo.update(payment.booking.id, { paymentStatus: status });
 
     if (status === 'Success') {
       const booking = await this.bookingRepo.findOne({ where: { id: payment.booking.id } });
       if (booking) {
         booking.status = 'PaymentVerified';
+        booking.paymentStatus = status;
         await this.bookingRepo.save(booking);
         // We could log status history here, but it's simpler to just update the status
       }

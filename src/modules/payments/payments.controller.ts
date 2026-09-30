@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Body, Param, UseGuards, UseInterceptors, UploadedFile, Request } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
+import { FileSignatureInterceptor } from '../../common/utils/file-signature.interceptor';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
@@ -7,6 +8,9 @@ import * as fs from 'fs';
 import { PaymentsService } from './payments.service';
 import { InitiatePaymentDto } from './dto/initiate-payment.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { documentFileFilter, MAX_UPLOAD_BYTES } from '../../common/utils/upload';
 
 const uploadDir = './uploads/payments';
 if (!fs.existsSync(uploadDir)) {
@@ -15,30 +19,32 @@ if (!fs.existsSync(uploadDir)) {
 
 @ApiTags('Payments')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('api/payments')
 export class PaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Post('initiate')
+  @Roles('Patient')
   @ApiOperation({ summary: 'Initiate a payment for a booking' })
-  async initiate(@Body() initiatePaymentDto: InitiatePaymentDto) {
+  async initiate(@Request() req: any, @Body() initiatePaymentDto: InitiatePaymentDto) {
     return {
       success: true,
-      data: await this.paymentsService.initiatePayment(initiatePaymentDto),
+      data: await this.paymentsService.initiatePayment(req.user, initiatePaymentDto),
     };
   }
 
   @Get('status/:transactionId')
   @ApiOperation({ summary: 'Check payment status using Transaction ID' })
-  async getStatus(@Param('transactionId') transactionId: string) {
+  async getStatus(@Request() req: any, @Param('transactionId') transactionId: string) {
     return {
       success: true,
-      data: await this.paymentsService.getPaymentStatus(transactionId),
+      data: await this.paymentsService.getPaymentStatus(req.user, transactionId),
     };
   }
 
   @Post('upload')
+  @Roles('Patient')
   @ApiOperation({ summary: 'Upload a payment proof screenshot' })
   @ApiConsumes('multipart/form-data')
   @UseInterceptors(FileInterceptor('file', {
@@ -49,9 +55,12 @@ export class PaymentsController {
         const ext = extname(file.originalname);
         cb(null, `${uniqueSuffix}${ext}`);
       }
-    })
-  }))
+    }),
+    limits: { fileSize: MAX_UPLOAD_BYTES },
+    fileFilter: documentFileFilter,
+  }), FileSignatureInterceptor)
   async uploadPaymentProof(
+    @Request() req: any,
     @UploadedFile() file: Express.Multer.File,
     @Body('bookingId') bookingId: string,
     @Body('amount') amount: number,
@@ -59,11 +68,12 @@ export class PaymentsController {
   ) {
     return {
       success: true,
-      data: await this.paymentsService.uploadPaymentProof(bookingId, file, amount, transactionId),
+      data: await this.paymentsService.uploadPaymentProof(req.user, bookingId, file, amount, transactionId),
     };
   }
 
   @Post('verify/:paymentId')
+  @Roles('Admin', 'SuperAdmin')
   @ApiOperation({ summary: 'Verify a payment (Admin only ideally)' })
   async verifyPayment(
     @Request() req: any,
@@ -80,10 +90,10 @@ export class PaymentsController {
 
   @Get('booking/:bookingId')
   @ApiOperation({ summary: 'Get payment details for a specific booking' })
-  async getByBookingId(@Param('bookingId') bookingId: string) {
+  async getByBookingId(@Request() req: any, @Param('bookingId') bookingId: string) {
     return {
       success: true,
-      data: await this.paymentsService.getPaymentByBookingId(bookingId),
+      data: await this.paymentsService.getPaymentByBookingId(req.user, bookingId),
     };
   }
 }

@@ -2,15 +2,18 @@ import { Controller, Get, Param, UseGuards, Request, Patch } from '@nestjs/commo
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
 
 @ApiTags('Notifications')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('api/notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Get('all')
+  @Roles('Admin', 'SuperAdmin')
   @ApiOperation({ summary: 'Get all notifications (Admin)' })
   async getAll() {
     const data = await this.notificationsService.getAllNotifications();
@@ -18,6 +21,7 @@ export class NotificationsController {
   }
 
   @Get()
+  @Roles('Patient')
   @ApiOperation({ summary: 'Get all notifications for the logged-in user' })
   async getMine(@Request() req: any) {
     const data = await this.notificationsService.getMyNotifications(req.user.id);
@@ -25,6 +29,7 @@ export class NotificationsController {
   }
 
   @Patch('read/:id')
+  @Roles('Patient')
   @ApiOperation({ summary: 'Mark a notification as read' })
   async markAsRead(@Request() req: any, @Param('id') id: string) {
     await this.notificationsService.markAsRead(req.user.id, id);
@@ -32,6 +37,7 @@ export class NotificationsController {
   }
 
   @Patch('read-all')
+  @Roles('Patient')
   @ApiOperation({ summary: 'Mark all notifications as read for the logged-in user' })
   async markAllAsRead(@Request() req: any) {
     await this.notificationsService.markAllAsRead(req.user.id);
@@ -40,8 +46,8 @@ export class NotificationsController {
 
   @Get('booking/:bookingId')
   @ApiOperation({ summary: 'Get all notifications for a specific booking' })
-  async getForBooking(@Param('bookingId') bookingId: string) {
-    const data = await this.notificationsService.getNotificationsForBooking(bookingId);
+  async getForBooking(@Request() req: any, @Param('bookingId') bookingId: string) {
+    const data = await this.notificationsService.getNotificationsForBooking(req.user, bookingId);
     return { success: true, data };
   }
 }

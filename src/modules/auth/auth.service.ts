@@ -1,4 +1,5 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -22,9 +23,20 @@ export class AuthService {
     private sessionRepo: Repository<UserSession>,
     @InjectRepository(RefreshToken)
     private refreshTokenRepo: Repository<RefreshToken>,
+    private configService: ConfigService,
   ) {}
 
+  /** The OTP is echoed in API responses only when EXPOSE_DEV_OTP=true (local testing, never production). */
+  private devOtpHint(otpCode: string) {
+    return this.configService.get<string>('EXPOSE_DEV_OTP') === 'true' ? { devOtpHint: otpCode } : {};
+  }
+
   async sendOtpLogin(sendOtpDto: SendOtpDto) {
+    const identifier = (sendOtpDto.identifier || '').trim();
+    if (sendOtpDto.channel === 'EMAIL' ? !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier) : !/^\+?\d{8,15}$/.test(identifier)) {
+      throw new BadRequestException(sendOtpDto.channel === 'EMAIL' ? 'A valid email address is required' : 'A valid phone number is required');
+    }
+    sendOtpDto.identifier = identifier;
     let user;
     if (sendOtpDto.channel === 'EMAIL') {
       user = await this.usersService.findByEmail(sendOtpDto.identifier);
@@ -46,7 +58,7 @@ export class AuthService {
     return {
       success: true,
       message: 'OTP sent successfully',
-      data: { devOtpHint: otpCode }
+      data: this.devOtpHint(otpCode),
     };
   }
 
@@ -134,7 +146,7 @@ export class AuthService {
       data: {
         userId: user.id,
         phoneNumber: user.phoneNumber,
-        devOtpHint: otpCode, // Included only for testing in this dev phase
+        ...this.devOtpHint(otpCode),
       },
     };
   }
@@ -178,10 +190,27 @@ export class AuthService {
   async getProfile(userId: string) {
     const user = await this.usersService.findById(userId);
     if (!user) throw new BadRequestException('User not found');
-    return user;
+    // Email-only / phone-only signups are stored with generated placeholders (the DB requires both);
+    // never present those as the user's real contact details.
+    const phoneIsPlaceholder = /^[0-9]{13,15}$/.test(user.phoneNumber || '');
+    const emailIsPlaceholder = /^guest_[0-9]+@inhousedoctor\.com$/i.test(user.email || '');
+    return {
+      ...user,
+      phoneNumber: phoneIsPlaceholder ? null : user.phoneNumber,
+      email: emailIsPlaceholder ? null : user.email,
+    };
   }
 
-  async updateProfile(userId: string, updateData: any) {
+  async updateProfile(userId: string, rawData: any) {
+    // Whitelist: never allow clients to set id / isVerified / status / createdDate
+    const updateData: Record<string, any> = {};
+    for (const key of ['firstName', 'lastName', 'fullName', 'email']) {
+      if (rawData && typeof rawData[key] === 'string') updateData[key] = rawData[key].trim();
+    }
+    if (updateData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(updateData.email)) {
+      throw new BadRequestException('A valid email address is required');
+    }
+    if (updateData.fullName === '') throw new BadRequestException('Name cannot be empty');
     if (updateData.firstName || updateData.lastName) {
       const user = await this.usersService.findById(userId);
       if (user) {
@@ -202,6 +231,9 @@ export class AuthService {
   }
 
   async refreshToken(refreshTokenValue: string) {
+    if (!refreshTokenValue || typeof refreshTokenValue !== 'string') {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
     const tokenRecord = await this.refreshTokenRepo.findOne({
       where: { token: refreshTokenValue, isRevoked: false },
       relations: { user: true }
@@ -223,6 +255,9 @@ export class AuthService {
   }
 
   async logout(userId: string, refreshTokenValue: string) {
+    if (!refreshTokenValue || typeof refreshTokenValue !== 'string') {
+      return { success: true, message: 'Logged out successfully' };
+    }
     const tokenRecord = await this.refreshTokenRepo.findOne({
       where: { token: refreshTokenValue, user: { id: userId } }
     });

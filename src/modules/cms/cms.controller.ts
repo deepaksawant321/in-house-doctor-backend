@@ -1,8 +1,16 @@
 import { Controller, Get, Post, Body, Put, Delete, Param } from '@nestjs/common';
 import { CmsService } from './cms.service';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { UseGuards, ParseIntPipe } from '@nestjs/common';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 
 @ApiTags('CMS')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('Admin', 'SuperAdmin')
 @Controller('api/cms')
 export class CmsController {
   constructor(private readonly cmsService: CmsService) {}
@@ -14,6 +22,8 @@ export class CmsController {
   }
 
   @Get('faqs')
+  @Public()
+  @Roles()
   @ApiOperation({ summary: 'Get all active FAQs for the public site' })
   getActiveFaqs() {
     return this.cmsService.getActiveFaqs();
@@ -27,14 +37,14 @@ export class CmsController {
 
   @Put('faqs/:id')
   @ApiOperation({ summary: 'Update FAQ' })
-  updateFaq(@Param('id') id: string, @Body() data: any) {
-    return this.cmsService.updateFaq(+id, data);
+  updateFaq(@Param('id', ParseIntPipe) id: number, @Body() data: any) {
+    return this.cmsService.updateFaq(id, data);
   }
 
   @Delete('faqs/:id')
   @ApiOperation({ summary: 'Delete FAQ' })
-  deleteFaq(@Param('id') id: string) {
-    return this.cmsService.deleteFaq(+id);
+  deleteFaq(@Param('id', ParseIntPipe) id: number) {
+    return this.cmsService.deleteFaq(id);
   }
 
   @Get('testimonials/all')
@@ -44,6 +54,8 @@ export class CmsController {
   }
 
   @Get('testimonials')
+  @Public()
+  @Roles()
   @ApiOperation({ summary: 'Get all active Testimonials for the public site' })
   getActiveTestimonials() {
     return this.cmsService.getActiveTestimonials();
@@ -57,14 +69,14 @@ export class CmsController {
 
   @Put('testimonials/:id')
   @ApiOperation({ summary: 'Update Testimonial' })
-  updateTestimonial(@Param('id') id: string, @Body() data: any) {
-    return this.cmsService.updateTestimonial(+id, data);
+  updateTestimonial(@Param('id', ParseIntPipe) id: number, @Body() data: any) {
+    return this.cmsService.updateTestimonial(id, data);
   }
 
   @Delete('testimonials/:id')
   @ApiOperation({ summary: 'Delete Testimonial' })
-  deleteTestimonial(@Param('id') id: string) {
-    return this.cmsService.deleteTestimonial(+id);
+  deleteTestimonial(@Param('id', ParseIntPipe) id: number) {
+    return this.cmsService.deleteTestimonial(id);
   }
 
   @Get('services/all')
@@ -74,6 +86,8 @@ export class CmsController {
   }
 
   @Get('services')
+  @Public()
+  @Roles()
   @ApiOperation({ summary: 'Get all active Services for the public site' })
   getActiveServices() {
     return this.cmsService.getActiveServices();
@@ -87,14 +101,14 @@ export class CmsController {
 
   @Put('services/:id')
   @ApiOperation({ summary: 'Update Service' })
-  updateService(@Param('id') id: string, @Body() data: any) {
-    return this.cmsService.updateService(+id, data);
+  updateService(@Param('id', ParseIntPipe) id: number, @Body() data: any) {
+    return this.cmsService.updateService(id, data);
   }
 
   @Delete('services/:id')
   @ApiOperation({ summary: 'Delete Service' })
-  deleteService(@Param('id') id: string) {
-    return this.cmsService.deleteService(+id);
+  deleteService(@Param('id', ParseIntPipe) id: number) {
+    return this.cmsService.deleteService(id);
   }
 
   // ─── CMS Blocks ─────────────────────────────────────────────────────────────
@@ -106,6 +120,8 @@ export class CmsController {
   }
 
   @Get('blocks')
+  @Public()
+  @Roles()
   @ApiOperation({ summary: 'Get all active Blocks for the public site' })
   getActiveBlocks() {
     return this.cmsService.getActiveBlocks();
@@ -119,14 +135,14 @@ export class CmsController {
 
   @Put('blocks/:id')
   @ApiOperation({ summary: 'Update CMS Block' })
-  updateBlock(@Param('id') id: string, @Body() data: any) {
-    return this.cmsService.updateBlock(+id, data);
+  updateBlock(@Param('id', ParseIntPipe) id: number, @Body() data: any) {
+    return this.cmsService.updateBlock(id, data);
   }
 
   @Delete('blocks/:id')
   @ApiOperation({ summary: 'Delete CMS Block' })
-  deleteBlock(@Param('id') id: string) {
-    return this.cmsService.deleteBlock(+id);
+  deleteBlock(@Param('id', ParseIntPipe) id: number) {
+    return this.cmsService.deleteBlock(id);
   }
 
   // ─── Static Pages ───────────────────────────────────────────────────────────
@@ -138,6 +154,8 @@ export class CmsController {
   }
 
   @Get('pages/:slug')
+  @Public()
+  @Roles()
   @ApiOperation({ summary: 'Get a Static Page by slug' })
   getPageBySlug(@Param('slug') slug: string) {
     return this.cmsService.getPageBySlug(slug);
@@ -151,13 +169,13 @@ export class CmsController {
 
   @Put('pages/:id')
   @ApiOperation({ summary: 'Update Static Page' })
-  updatePage(@Param('id') id: string, @Body() data: any) {
-    return this.cmsService.updatePage(+id, data);
+  updatePage(@Param('id', ParseIntPipe) id: number, @Body() data: any) {
+    return this.cmsService.updatePage(id, data);
   }
 
   @Delete('pages/:id')
   @ApiOperation({ summary: 'Delete Static Page' })
-  deletePage(@Param('id') id: string) {
-    return this.cmsService.deletePage(+id);
+  deletePage(@Param('id', ParseIntPipe) id: number) {
+    return this.cmsService.deletePage(id);
   }
 }

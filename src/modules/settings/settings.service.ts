@@ -3,6 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Setting } from '../../entities/setting.entity';
 
+const EDITABLE_FIELDS = [
+  'companyName', 'supportEmail', 'supportPhone', 'whatsappNumber', 'primaryUpiId', 'qrCodeImage', 'logoUrl',
+  'faviconUrl', 'socialFacebook', 'socialInstagram', 'socialTwitter', 'googleMapsLink', 'bookingPrefix',
+  'smsTemplates', 'emailTemplates',
+] as const;
+
 @Injectable()
 export class SettingsService {
   private readonly logger = new Logger(SettingsService.name);
@@ -33,7 +39,13 @@ export class SettingsService {
       setting = this.settingRepo.create({});
     }
 
-    Object.assign(setting, data);
+    // Whitelist: never let the request body overwrite the key/ids or unknown columns
+    for (const field of EDITABLE_FIELDS) {
+      if (data && Object.prototype.hasOwnProperty.call(data, field)) {
+        const v = data[field];
+        (setting as any)[field] = v === null || v === undefined ? null : String(v).slice(0, 2000);
+      }
+    }
     await this.settingRepo.save(setting);
     
     this.logger.log(`Settings updated by admin ${updatedBy}`);

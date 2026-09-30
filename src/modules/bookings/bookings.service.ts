@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Logger, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, Logger, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Booking } from '../../entities/booking.entity';
@@ -8,6 +8,17 @@ import { Notification } from '../../entities/notification.entity';
 import { User } from '../../entities/user.entity';
 import { CreateBookingDto } from './dto/create-booking.dto';
 import { EmailService } from '../../common/email/email.service';
+import { Patient } from '../../entities/patient.entity';
+import { UserAddress } from '../../entities/user-address.entity';
+import { parsePaging } from '../../common/utils/pagination';
+import { isAdminUser } from '../../common/utils/roles';
+
+export const VALID_BOOKING_STATUSES = [
+  'Created', 'Pending', 'Confirmed', 'PaymentPending', 'PaymentVerified', 'DoctorAssigned',
+  'DoctorConfirmed', 'VisitStarted', 'VisitCompleted', 'Completed', 'Cancelled',
+];
+
+const NUMERIC_ID = /^\d{1,18}$/;
 
 @Injectable()
 export class BookingsService {
@@ -29,8 +40,30 @@ export class BookingsService {
 
   async createBooking(userId: string, createBookingDto: CreateBookingDto): Promise<Booking> {
     const scheduledDateObj = new Date(createBookingDto.scheduledDate);
+    if (isNaN(scheduledDateObj.getTime())) {
+      throw new BadRequestException('Scheduled date is invalid');
+    }
     if (scheduledDateObj < new Date()) {
       throw new BadRequestException('Scheduled date cannot be in the past');
+    }
+
+    // The patient (and address, if given) must belong to the authenticated user
+    if (!NUMERIC_ID.test(createBookingDto.patientId)) {
+      throw new BadRequestException('Invalid patientId');
+    }
+    const patientRecord = await this.bookingRepo.manager.findOne(Patient, {
+      where: { id: createBookingDto.patientId, user: { id: userId } } as any,
+    });
+    if (!patientRecord) throw new NotFoundException('Patient not found');
+
+    if (createBookingDto.addressId) {
+      if (!NUMERIC_ID.test(createBookingDto.addressId)) {
+        throw new BadRequestException('Invalid addressId');
+      }
+      const addressRecord = await this.bookingRepo.manager.findOne(UserAddress, {
+        where: { id: createBookingDto.addressId, user: { id: userId } } as any,
+      });
+      if (!addressRecord) throw new NotFoundException('Address not found');
     }
 
     const existing = await this.bookingRepo.findOne({
@@ -51,9 +84,11 @@ export class BookingsService {
       patient: { id: createBookingDto.patientId } as any,
       scheduledDate: new Date(createBookingDto.scheduledDate),
       symptoms: createBookingDto.symptoms,
+      preferredTime: createBookingDto.preferredTime,
       serviceId: createBookingDto.serviceId,
       addressId: createBookingDto.addressId,
       status: 'Pending',
+      paymentStatus: 'Pending',
     } as any);
 
     const savedBooking = await this.bookingRepo.save(booking) as unknown as Booking;
@@ -83,12 +118,9 @@ export class BookingsService {
 
     // Send Email to User + Admin (non-blocking)
     try {
-      const [user, patient] = await Promise.all([
-        this.userRepo.findOne({ where: { id: userId } }),
-        this.bookingRepo.manager.query(`SELECT FullName FROM Patients WHERE PatientId = ${createBookingDto.patientId}`),
-      ]);
+      const user = await this.userRepo.findOne({ where: { id: userId } });
 
-      const patientName = patient?.[0]?.FullName || 'Patient';
+      const patientName = patientRecord.fullName || 'Patient';
       const scheduledDateStr = new Date(createBookingDto.scheduledDate).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' });
 
       if (user?.email) {
@@ -122,14 +154,22 @@ export class BookingsService {
     });
   }
 
-  async findAllBookings(): Promise<Booking[]> {
-    return this.bookingRepo.find({
+  async findAllBookings(page?: string, pageSize?: string) {
+    const paging = parsePaging(page, pageSize);
+    const [data, total] = await this.bookingRepo.findAndCount({
       relations: { doctor: true, patient: true },
-      order: { createdDate: 'DESC' },
+      order: { createdDate: 'DESC', id: 'DESC' },
+      skip: paging.skip,
+      take: paging.take,
     });
+    return { data, total, page: paging.page, pageSize: paging.pageSize };
   }
 
   async updateStatus(id: string, status: string, remarks?: string): Promise<Booking> {
+    if (!VALID_BOOKING_STATUSES.includes(status)) {
+      throw new BadRequestException(`Invalid status. Allowed: ${VALID_BOOKING_STATUSES.join(', ')}`);
+    }
+    if (!NUMERIC_ID.test(id)) throw new BadRequestException('Invalid booking id');
     const booking = await this.bookingRepo.findOne({
       where: { id },
       relations: { patient: true, user: true },
@@ -178,6 +218,9 @@ export class BookingsService {
       where: { id: bookingId, user: { id: userId } },
     });
     if (!booking) throw new NotFoundException('Booking not found');
+    if (['Cancelled', 'Completed', 'VisitCompleted'].includes(booking.status)) {
+      throw new BadRequestException(`A booking that is ${booking.status} cannot be cancelled`);
+    }
 
     return this.updateStatus(bookingId, 'Cancelled', 'Cancelled by user');
   }
@@ -193,6 +236,7 @@ export class BookingsService {
       patientId: originalBooking.patient.id,
       scheduledDate: newDate,
       symptoms: originalBooking.symptoms,
+      preferredTime: originalBooking.preferredTime,
       serviceId: originalBooking.serviceId,
       addressId: originalBooking.addressId,
     };
@@ -200,9 +244,19 @@ export class BookingsService {
     return this.createBooking(userId, newBookingDto);
   }
 
-  async uploadPrescription(bookingId: string, file: Express.Multer.File): Promise<Prescription> {
-    const booking = await this.bookingRepo.findOne({ where: { id: bookingId } });
+  private async assertBookingAccess(user: { id: string; role?: string }, bookingId: string): Promise<Booking> {
+    if (!NUMERIC_ID.test(bookingId)) throw new BadRequestException('Invalid booking id');
+    const booking = await this.bookingRepo.findOne({ where: { id: bookingId }, relations: { user: true } });
     if (!booking) throw new NotFoundException('Booking not found');
+    if (!isAdminUser(user) && booking.user?.id !== user.id) {
+      throw new ForbiddenException('You do not have access to this booking');
+    }
+    return booking;
+  }
+
+  async uploadPrescription(user: { id: string; role?: string }, bookingId: string, file: Express.Multer.File): Promise<Prescription> {
+    if (!file) throw new BadRequestException('A file is required');
+    const booking = await this.assertBookingAccess(user, bookingId);
 
     const prescription = this.prescriptionRepo.create({
       booking,
@@ -213,7 +267,8 @@ export class BookingsService {
     return this.prescriptionRepo.save(prescription);
   }
 
-  async getPrescriptions(bookingId: string): Promise<Prescription[]> {
+  async getPrescriptions(user: { id: string; role?: string }, bookingId: string): Promise<Prescription[]> {
+    await this.assertBookingAccess(user, bookingId);
     return this.prescriptionRepo.find({
       where: { booking: { id: bookingId } },
       order: { uploadedDate: 'DESC' },

@@ -2,6 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { MailerService } from '@nestjs-modules/mailer';
 import { ConfigService } from '@nestjs/config';
 
+/** Escape user-supplied text before embedding it in HTML emails. */
+export const esc = (value: unknown): string =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 @Injectable()
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
@@ -17,12 +26,19 @@ export class EmailService {
 
   // ─── Core Send Helper ─────────────────────────────────────────────────────
 
-  private async send(to: string, subject: string, html: string): Promise<void> {
+  private async send(to: string, subject: string, html: string): Promise<boolean> {
+    // Phone-only signups get a generated placeholder address (guest_<timestamp>@inhousedoctor.com) — never mail it.
+    if (!to || /^guest_\d+@inhousedoctor\.com$/i.test(to)) {
+      this.logger.log(`Skipping email "${subject}" — no real recipient address`);
+      return false;
+    }
     try {
       await this.mailerService.sendMail({ to, subject, html });
       this.logger.log(`Email sent to ${to}: "${subject}"`);
+      return true;
     } catch (error) {
       this.logger.error(`Failed to send email to ${to}: ${error.message}`);
+      return false;
     }
   }
 
@@ -82,8 +98,8 @@ export class EmailService {
       <h2>Patient Profile Added ✅</h2>
       <p>A new patient profile has been added to your account.</p>
       <table class="info-table">
-        <tr><td>Patient Name</td><td><strong>${patientName}</strong></td></tr>
-        <tr><td>Relationship</td><td>${relationship || '—'}</td></tr>
+        <tr><td>Patient Name</td><td><strong>${esc(patientName)}</strong></td></tr>
+        <tr><td>Relationship</td><td>${esc(relationship || '—')}</td></tr>
       </table>
       <p>You can now book appointments for this patient directly from your dashboard.</p>
     `);
@@ -99,10 +115,10 @@ export class EmailService {
       <p>Your booking has been received. A doctor will be assigned shortly.</p>
       <table class="info-table">
         <tr><td>Booking No.</td><td><strong>${details.bookingNo}</strong></td></tr>
-        <tr><td>Patient</td><td>${details.patientName}</td></tr>
-        <tr><td>Service</td><td>${details.service || '—'}</td></tr>
-        <tr><td>Scheduled Date</td><td>${details.scheduledDate}</td></tr>
-        <tr><td>Address</td><td>${details.address || '—'}</td></tr>
+        <tr><td>Patient</td><td>${esc(details.patientName)}</td></tr>
+        <tr><td>Service</td><td>${esc(details.service || '—')}</td></tr>
+        <tr><td>Scheduled Date</td><td>${esc(details.scheduledDate)}</td></tr>
+        <tr><td>Address</td><td>${esc(details.address || '—')}</td></tr>
         <tr><td>Status</td><td><span class="badge badge-warning">Pending</span></td></tr>
       </table>
       <p>We will notify you once a doctor is assigned.</p>
@@ -127,7 +143,7 @@ export class EmailService {
       <table class="info-table">
         <tr><td>Booking No.</td><td><strong>${bookingNo}</strong></td></tr>
         <tr><td>New Status</td><td><span class="badge ${badgeClass}">${status}</span></td></tr>
-        ${remarks ? `<tr><td>Remarks</td><td>${remarks}</td></tr>` : ''}
+        ${remarks ? `<tr><td>Remarks</td><td>${esc(remarks)}</td></tr>` : ''}
       </table>
       <p>Log in to your account to view full details.</p>
     `);
@@ -145,7 +161,7 @@ export class EmailService {
       <p>Great news! A doctor has been assigned for your booking.</p>
       <table class="info-table">
         <tr><td>Booking No.</td><td><strong>${bookingNo}</strong></td></tr>
-        <tr><td>Doctor</td><td><strong>${doctorName}</strong></td></tr>
+        <tr><td>Doctor</td><td><strong>${esc(doctorName)}</strong></td></tr>
         <tr><td>Scheduled Date</td><td>${scheduledDate}</td></tr>
         <tr><td>Status</td><td><span class="badge badge-info">Doctor Assigned</span></td></tr>
       </table>
@@ -182,7 +198,7 @@ export class EmailService {
         <tr><td>Booking No.</td><td><strong>${bookingNo}</strong></td></tr>
         <tr><td>Amount</td><td><strong>₹${amount}</strong></td></tr>
         <tr><td>Status</td><td><span class="badge ${isSuccess ? 'badge-success' : 'badge-danger'}">${status}</span></td></tr>
-        ${remarks ? `<tr><td>Remarks</td><td>${remarks}</td></tr>` : ''}
+        ${remarks ? `<tr><td>Remarks</td><td>${esc(remarks)}</td></tr>` : ''}
       </table>
       ${isSuccess
         ? '<p>Your booking is now confirmed. Our team will be in touch soon.</p>'
@@ -194,12 +210,12 @@ export class EmailService {
 
   // ─── Admin Alert Emails ─────────────────────────────────────────────────────
 
-  async sendAdminAlert(subject: string, bodyHtml: string): Promise<void> {
+  async sendAdminAlert(subject: string, bodyHtml: string): Promise<boolean> {
     const html = this.template(`Admin Alert: ${subject}`, `
       <h2>⚡ Admin Notification</h2>
       ${bodyHtml}
     `);
-    await this.send(this.adminEmail, `[Admin] ${subject}`, html);
+    return this.send(this.adminEmail, `[Admin] ${subject}`, html);
   }
 
   async sendAdminNewBooking(bookingNo: string, patientName: string, service: string, scheduledDate: string): Promise<void> {
@@ -207,8 +223,8 @@ export class EmailService {
       <p>A new booking has been created and is awaiting your review.</p>
       <table class="info-table">
         <tr><td>Booking No.</td><td><strong>${bookingNo}</strong></td></tr>
-        <tr><td>Patient</td><td>${patientName}</td></tr>
-        <tr><td>Service</td><td>${service || '—'}</td></tr>
+        <tr><td>Patient</td><td>${esc(patientName)}</td></tr>
+        <tr><td>Service</td><td>${esc(service || '—')}</td></tr>
         <tr><td>Scheduled</td><td>${scheduledDate}</td></tr>
         <tr><td>Status</td><td><span class="badge badge-warning">Pending</span></td></tr>
       </table>
@@ -221,7 +237,7 @@ export class EmailService {
       <table class="info-table">
         <tr><td>Booking No.</td><td><strong>${bookingNo}</strong></td></tr>
         <tr><td>Amount</td><td>₹${amount}</td></tr>
-        <tr><td>Transaction ID</td><td>${transactionId}</td></tr>
+        <tr><td>Transaction ID</td><td>${esc(transactionId)}</td></tr>
         <tr><td>Action Required</td><td><span class="badge badge-warning">Pending Verification</span></td></tr>
       </table>
     `);
