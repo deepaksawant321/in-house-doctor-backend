@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, Logger, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, Not } from 'typeorm';
+import { Service } from '../../entities/service.entity';
 import { Booking } from '../../entities/booking.entity';
 import { BookingStatusHistory } from '../../entities/booking-status-history.entity';
 import { Prescription } from '../../entities/prescription.entity';
@@ -12,6 +13,7 @@ import { Patient } from '../../entities/patient.entity';
 import { UserAddress } from '../../entities/user-address.entity';
 import { parsePaging } from '../../common/utils/pagination';
 import { isAdminUser } from '../../common/utils/roles';
+import { formatDateTimeDMY } from '../../common/utils/date-format';
 
 export const VALID_BOOKING_STATUSES = [
   'Created', 'Pending', 'Confirmed', 'PaymentPending', 'PaymentVerified', 'DoctorAssigned',
@@ -19,6 +21,8 @@ export const VALID_BOOKING_STATUSES = [
 ];
 
 const NUMERIC_ID = /^\d{1,18}$/;
+const TIME_SLOTS = ['09:00 AM - 12:00 PM', '12:00 PM - 04:00 PM', '04:00 PM - 08:00 PM'];
+const MAX_BOOKING_DAYS_AHEAD = 180;
 
 @Injectable()
 export class BookingsService {
@@ -38,13 +42,39 @@ export class BookingsService {
     private readonly emailService: EmailService,
   ) {}
 
+  // Serialises concurrent bookings for the same patient inside this process, so the
+  // duplicate check below cannot be raced by parallel requests.
+  private readonly patientLocks = new Map<string, Promise<unknown>>();
+
   async createBooking(userId: string, createBookingDto: CreateBookingDto): Promise<Booking> {
+    const key = String(createBookingDto.patientId);
+    const prev = this.patientLocks.get(key) ?? Promise.resolve();
+    const run = prev.catch(() => undefined).then(() => this.createBookingUnlocked(userId, createBookingDto));
+    this.patientLocks.set(key, run);
+    try {
+      return await run;
+    } finally {
+      if (this.patientLocks.get(key) === run) this.patientLocks.delete(key);
+    }
+  }
+
+  private async createBookingUnlocked(userId: string, createBookingDto: CreateBookingDto): Promise<Booking> {
     const scheduledDateObj = new Date(createBookingDto.scheduledDate);
     if (isNaN(scheduledDateObj.getTime())) {
       throw new BadRequestException('Scheduled date is invalid');
     }
     if (scheduledDateObj < new Date()) {
       throw new BadRequestException('Scheduled date cannot be in the past');
+    }
+    if (scheduledDateObj.getTime() - Date.now() > MAX_BOOKING_DAYS_AHEAD * 864e5) {
+      throw new BadRequestException(`Bookings can be made at most ${MAX_BOOKING_DAYS_AHEAD} days ahead`);
+    }
+    if (createBookingDto.preferredTime && !TIME_SLOTS.includes(createBookingDto.preferredTime)) {
+      throw new BadRequestException('Invalid time slot');
+    }
+    if (createBookingDto.serviceId != null) {
+      const service = await this.bookingRepo.manager.findOne(Service, { where: { id: createBookingDto.serviceId } });
+      if (!service || service.isActive === false) throw new BadRequestException('Selected service is not available');
     }
 
     // The patient (and address, if given) must belong to the authenticated user
@@ -70,7 +100,7 @@ export class BookingsService {
       where: {
         patient: { id: createBookingDto.patientId } as any,
         scheduledDate: new Date(createBookingDto.scheduledDate),
-        status: 'Pending'
+        status: Not('Cancelled'),
       }
     });
 
@@ -121,7 +151,7 @@ export class BookingsService {
       const user = await this.userRepo.findOne({ where: { id: userId } });
 
       const patientName = patientRecord.fullName || 'Patient';
-      const scheduledDateStr = new Date(createBookingDto.scheduledDate).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' });
+      const scheduledDateStr = formatDateTimeDMY(createBookingDto.scheduledDate);
 
       if (user?.email) {
         await this.emailService.sendBookingConfirmation(user.email, {

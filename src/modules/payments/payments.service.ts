@@ -176,6 +176,9 @@ export class PaymentsService {
     if (!NUMERIC_ID.test(String(paymentId))) throw new BadRequestException('Invalid payment id');
     const payment = await this.paymentRepo.findOne({ where: { id: paymentId }, relations: { booking: true } });
     if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status === 'Success') {
+      throw new BadRequestException('This payment is already verified and can no longer be changed');
+    }
 
     payment.status = status;
     payment.verifiedBy = verifiedByAdminId;

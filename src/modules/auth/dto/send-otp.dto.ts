@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsEnum } from 'class-validator';
+import { IsNotEmpty, IsString, IsEnum, MaxLength, IsIn } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum OtpChannel {
@@ -10,6 +10,7 @@ export class SendOtpDto {
   @ApiProperty({ example: 'user@example.com or +919876543210' })
   @IsNotEmpty()
   @IsString()
+  @MaxLength(254)
   identifier: string;
 
   @ApiProperty({ enum: OtpChannel })
@@ -20,5 +21,6 @@ export class SendOtpDto {
   @ApiProperty({ example: 'LOGIN' })
   @IsNotEmpty()
   @IsString()
+  @IsIn(['LOGIN', 'REGISTER'])
   purpose: string;
 }

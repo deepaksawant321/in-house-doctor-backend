@@ -34,30 +34,44 @@ export class OtpService {
     return crypto.createHash('sha256').update(otp).digest('hex');
   }
 
+  /**
+   * DEVELOPMENT ONLY: when DEV_FIXED_OTP is set (e.g. 111111) every OTP is that value. It is ignored when
+   * NODE_ENV=production, and main.ts refuses to boot in production with it set.
+   */
+  private fixedDevOtp(): string | null {
+    const fixed = process.env.DEV_FIXED_OTP?.trim();
+    if (!fixed || process.env.NODE_ENV === 'production') return null;
+    return fixed;
+  }
+
   async generateOtp(target: string, channel: 'EMAIL' | 'SMS', purpose: string): Promise<string> {
-    // SECURITY HARDENING: Cooldown Enforcement (60 seconds)
-    const recentOtp = await this.otpRepo.createQueryBuilder('otp')
-      .where('(otp.email = :target OR otp.phoneNumber = :target)', { target })
-      .andWhere('otp.purpose = :purpose', { purpose })
-      .andWhere('otp.createdDate > :date', { date: new Date(Date.now() - 60000) })
-      .getOne();
+    const fixedOtp = this.fixedDevOtp();
 
-    if (recentOtp) {
-      throw new BadRequestException('Please wait 60 seconds before requesting another OTP');
+    if (!fixedOtp) {
+      // SECURITY HARDENING: Cooldown Enforcement (60 seconds)
+      const recentOtp = await this.otpRepo.createQueryBuilder('otp')
+        .where('(otp.email = :target OR otp.phoneNumber = :target)', { target })
+        .andWhere('otp.purpose = :purpose', { purpose })
+        .andWhere('otp.createdDate > :date', { date: new Date(Date.now() - 60000) })
+        .getOne();
+
+      if (recentOtp) {
+        throw new BadRequestException('Please wait 60 seconds before requesting another OTP');
+      }
+
+      // SECURITY HARDENING: Daily Rate Limit (Max 5 per day)
+      const dailyCount = await this.otpRepo.createQueryBuilder('otp')
+        .where('(otp.email = :target OR otp.phoneNumber = :target)', { target })
+        .andWhere('otp.purpose = :purpose', { purpose })
+        .andWhere('otp.createdDate > :date', { date: new Date(Date.now() - 24 * 60 * 60 * 1000) })
+        .getCount();
+
+      if (dailyCount >= 5) {
+        throw new BadRequestException('Maximum daily OTP limit reached. Please try again tomorrow.');
+      }
     }
 
-    // SECURITY HARDENING: Daily Rate Limit (Max 5 per day)
-    const dailyCount = await this.otpRepo.createQueryBuilder('otp')
-      .where('(otp.email = :target OR otp.phoneNumber = :target)', { target })
-      .andWhere('otp.purpose = :purpose', { purpose })
-      .andWhere('otp.createdDate > :date', { date: new Date(Date.now() - 24 * 60 * 60 * 1000) })
-      .getCount();
-
-    if (dailyCount >= 5) {
-      throw new BadRequestException('Maximum daily OTP limit reached. Please try again tomorrow.');
-    }
-
-    const otpCode = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
+    const otpCode = fixedOtp ?? Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit OTP
     const expiresAt = new Date();
     expiresAt.setMinutes(expiresAt.getMinutes() + 5);
 
@@ -73,6 +87,12 @@ export class OtpService {
     } as any);
 
     await this.otpRepo.save(otpRecord);
+
+    if (fixedOtp) {
+      // Nothing is emailed/texted in fixed-OTP mode; the code is the configured DEV_FIXED_OTP.
+      this.logger.warn(`DEV_FIXED_OTP is active: OTP for ${target} (${purpose}) was not sent, use the fixed code`);
+      return otpCode;
+    }
 
     let provider: IOtpProvider = channel === 'EMAIL' ? this.emailProvider : this.smsProvider;
     await provider.sendOtp(target, otpCode);

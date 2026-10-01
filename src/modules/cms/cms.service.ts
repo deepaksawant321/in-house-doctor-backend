@@ -60,7 +60,8 @@ export class CmsService {
   }
 
   async deleteFaq(id: number) {
-    await this.faqRepo.delete(id);
+    const res = await this.faqRepo.delete(id);
+    if (!res.affected) throw new NotFoundException('Not found');
     return { success: true, message: 'Deleted successfully' };
   }
 
@@ -91,7 +92,8 @@ export class CmsService {
   }
 
   async deleteTestimonial(id: number) {
-    await this.testimonialRepo.delete(id);
+    const res = await this.testimonialRepo.delete(id);
+    if (!res.affected) throw new NotFoundException('Not found');
     return { success: true, message: 'Deleted successfully' };
   }
 
@@ -122,7 +124,8 @@ export class CmsService {
   }
 
   async deleteService(id: number) {
-    await this.serviceRepo.delete(id);
+    const res = await this.serviceRepo.delete(id);
+    if (!res.affected) throw new NotFoundException('Not found');
     return { success: true, message: 'Deleted successfully' };
   }
 
@@ -153,7 +156,8 @@ export class CmsService {
   }
 
   async deleteBlock(id: number) {
-    await this.cmsBlockRepo.delete(id);
+    const res = await this.cmsBlockRepo.delete(id);
+    if (!res.affected) throw new NotFoundException('Not found');
     return { success: true, message: 'Deleted successfully' };
   }
 
@@ -185,7 +189,8 @@ export class CmsService {
   }
 
   async deletePage(id: number) {
-    await this.staticPageRepo.delete(id);
+    const res = await this.staticPageRepo.delete(id);
+    if (!res.affected) throw new NotFoundException('Not found');
     return { success: true, message: 'Deleted successfully' };
   }
 }

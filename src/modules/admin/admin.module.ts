@@ -12,10 +12,12 @@ import { Booking } from '../../entities/booking.entity';
 import { Payment } from '../../entities/payment.entity';
 import { AuditLog } from '../../entities/audit-log.entity';
 import { Setting } from '../../entities/setting.entity';
+import { OtpModule } from '../otp/otp.module';
 import { DoctorAssignment } from '../../entities/doctor-assignment.entity';
 
 @Module({
   imports: [
+    OtpModule,
     TypeOrmModule.forFeature([AdminUser, User, Doctor, Booking, Payment, AuditLog, Setting, DoctorAssignment]),
     JwtModule.registerAsync({
       imports: [ConfigModule],

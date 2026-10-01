@@ -16,6 +16,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtService } from '@nestjs/jwt';
 import { AdminService } from './admin.service';
 import { AdminLoginDto } from './dto/admin-login.dto';
+import { AdminForgotPasswordDto, AdminResetPasswordDto } from './dto/admin-forgot-password.dto';
 import { UpdateBookingStatusDto } from './dto/update-booking-status.dto';
 import { VerifyPaymentDto } from './dto/verify-payment.dto';
 import { AssignDoctorDto } from './dto/assign-doctor.dto';
@@ -46,12 +47,30 @@ export class AdminController {
     return this.adminService.login(adminLoginDto, this.jwtService);
   }
 
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  @Roles()
+  @ApiOperation({ summary: 'Send a password-reset OTP to an admin email' })
+  async forgotPassword(@Body() dto: AdminForgotPasswordDto) {
+    return this.adminService.forgotPassword(dto);
+  }
+
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @Public()
+  @Roles()
+  @ApiOperation({ summary: 'Reset admin password using the emailed OTP' })
+  async resetPassword(@Body() dto: AdminResetPasswordDto) {
+    return this.adminService.resetPassword(dto);
+  }
+
   // ─── Dashboard ───────────────────────────────────────────────────────────────
 
   @Get('dashboard/stats')
   @ApiOperation({ summary: 'Get dashboard statistics' })
-  async getDashboardStats() {
-    return this.adminService.getDashboardStats();
+  async getDashboardStats(@Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
+    return this.adminService.getDashboardStats(startDate, endDate);
   }
 
   @Get('dashboard/trends')
@@ -64,16 +83,21 @@ export class AdminController {
 
   @Get('users')
   @ApiOperation({ summary: 'Get all registered patients/users' })
-  async getAllUsers(@Query('page') page?: string, @Query('pageSize') pageSize?: string) {
-    return this.adminService.getAllUsers(page, pageSize);
+  async getAllUsers(
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    return this.adminService.getAllUsers(page, pageSize, startDate, endDate);
   }
 
   // ─── Doctors ─────────────────────────────────────────────────────────────────
 
   @Get('doctors')
   @ApiOperation({ summary: 'Get all doctors' })
-  async getAllDoctors(@Query('status') status?: string) {
-    return this.adminService.getAllDoctors(status);
+  async getAllDoctors(@Query('status') status?: string, @Query('startDate') startDate?: string, @Query('endDate') endDate?: string) {
+    return this.adminService.getAllDoctors(status, startDate, endDate);
   }
 
   @Get('doctors/:id')

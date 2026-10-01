@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString, IsOptional, IsNumber, Min, Max, MinLength } from 'class-validator';
+import { IsNotEmpty, IsString, IsOptional, IsNumber, Min, Max, MinLength, MaxLength, Matches } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class CreatePatientDto {
@@ -8,6 +8,7 @@ export class CreatePatientDto {
   @IsString()
   @Transform(({ value }) => value?.trim())
   @MinLength(2)
+  @MaxLength(100)
   fullName: string;
 
   @ApiProperty({ example: 30, description: 'Age of the patient', required: false })
@@ -35,6 +36,7 @@ export class CreatePatientDto {
   @ApiProperty({ example: '9876543210', description: 'Mobile number', required: false })
   @IsOptional()
   @IsString()
+  @Matches(/^[+]?[0-9 ()-]{7,15}$/, { message: 'Enter a valid mobile number' })
   mobileNo?: string;
 
   @ApiProperty({ example: '9876543211', description: 'Emergency contact number', required: false })
@@ -45,6 +47,7 @@ export class CreatePatientDto {
   @ApiProperty({ example: 'Allergic to peanuts', description: 'Medical notes', required: false })
   @IsOptional()
   @IsString()
+  @MaxLength(2000)
   medicalNotes?: string;
 
 }

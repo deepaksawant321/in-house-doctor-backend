@@ -6,7 +6,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between, FindOptionsWhere, In, IsNull, MoreThanOrEqual } from 'typeorm';
+import { Repository, FindOptionsWhere, In, IsNull, MoreThanOrEqual } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { AdminUser } from '../../entities/admin-user.entity';
@@ -17,13 +17,20 @@ import { Payment } from '../../entities/payment.entity';
 import { AuditLog } from '../../entities/audit-log.entity';
 import { Setting } from '../../entities/setting.entity';
 import { AdminLoginDto } from './dto/admin-login.dto';
+import { AdminForgotPasswordDto, AdminResetPasswordDto } from './dto/admin-forgot-password.dto';
+import { OtpService } from '../otp/otp.service';
 import { DoctorAssignment } from '../../entities/doctor-assignment.entity';
 import { AssignDoctorDto } from './dto/assign-doctor.dto';
 import { parsePaging } from '../../common/utils/pagination';
+import { parseDateRange } from '../../common/utils/date-range';
 import { EmailService } from '../../common/email/email.service';
 import { UserAddress } from '../../entities/user-address.entity';
 import { Service } from '../../entities/service.entity';
 import { BookingStatusHistory } from '../../entities/booking-status-history.entity';
+import { VALID_BOOKING_STATUSES } from '../bookings/bookings.service';
+import { formatDateTimeDMY } from '../../common/utils/date-format';
+
+const TERMINAL_BOOKING_STATUSES = ['Cancelled', 'Completed'];
 @Injectable()
 export class AdminService {
   private readonly logger = new Logger(AdminService.name);
@@ -46,6 +53,7 @@ export class AdminService {
     @InjectRepository(DoctorAssignment)
     private assignmentRepo: Repository<DoctorAssignment>,
     private readonly emailService: EmailService,
+    private readonly otpService: OtpService,
   ) {}
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -100,22 +108,51 @@ export class AdminService {
     };
   }
 
+  private static readonly RESET_PURPOSE = 'ADMIN_PWD_RESET';
+
+  /** Sends a reset OTP if the admin exists. Always returns the same response so emails can't be enumerated. */
+  async forgotPassword(dto: AdminForgotPasswordDto) {
+    const admin = await this.adminRepo.findOne({ where: { email: dto.email } });
+    if (admin && admin.isActive) {
+      await this.otpService.generateOtp(admin.email, 'EMAIL', AdminService.RESET_PURPOSE);
+    }
+    return { success: true, message: 'If this email belongs to an admin account, a verification code has been sent.' };
+  }
+
+  async resetPassword(dto: AdminResetPasswordDto) {
+    const admin = await this.adminRepo.findOne({ where: { email: dto.email } });
+    if (!admin || !admin.isActive) throw new BadRequestException('Invalid or expired OTP');
+
+    await this.otpService.verifyOtp(admin.email, dto.otp, AdminService.RESET_PURPOSE);
+
+    admin.passwordHash = await bcrypt.hash(dto.newPassword, 10);
+    await this.adminRepo.save(admin);
+    await this.audit({ adminId: admin.id, actionName: 'AdminPasswordReset', entityName: 'AdminUsers', entityId: admin.id });
+
+    return { success: true, message: 'Password reset successful. You can now sign in.' };
+  }
+
   // ─── Dashboard Stats ─────────────────────────────────────────────────────────
 
-  async getDashboardStats() {
+  async getDashboardStats(startDate?: string, endDate?: string) {
+    // Optional inclusive date range; every card (bookings, users, active doctors, payments, visits) is scoped to it.
+    const range = parseDateRange(startDate, endDate);
+    const created = range ? { createdDate: range } : {};
+
     const [totalUsers, totalDoctors, totalBookings, pendingBookings, totalPayments, completedVisits] =
       await Promise.all([
-        this.userRepo.count(),
-        this.doctorRepo.count({ where: { status: 'Active' } }),
-        this.bookingRepo.count(),
-        this.bookingRepo.count({ where: { status: 'Pending' } }),
-        this.paymentRepo.count({ where: { status: 'Success' } }),
-        this.bookingRepo.count({ where: { status: In(['Completed', 'VisitCompleted']) } }),
+        this.userRepo.count({ where: created }),
+        this.doctorRepo.count({ where: { status: 'Active', ...created } }),
+        this.bookingRepo.count({ where: created }),
+        this.bookingRepo.count({ where: { status: 'Pending', ...created } }),
+        this.paymentRepo.count({ where: { status: 'Success', ...(range ? { booking: { createdDate: range } } : {}) } }),
+        this.bookingRepo.count({ where: { status: In(['Completed', 'VisitCompleted']), ...created } }),
       ]);
 
     return {
       success: true,
-      data: { totalUsers, totalDoctors, totalBookings, pendingBookings, completedPayments: totalPayments, completedVisits },
+      // `range` echoes the filter that was applied so the UI can tell a stale backend (which ignores it) from a real result
+      data: { totalUsers, totalDoctors, totalBookings, pendingBookings, completedPayments: totalPayments, completedVisits, range: { startDate: startDate || null, endDate: endDate || null } },
     };
   }
 
@@ -176,16 +213,19 @@ export class AdminService {
 
   // ─── Users ───────────────────────────────────────────────────────────────────
 
-  async getAllUsers(page?: string, pageSize?: string) {
+  async getAllUsers(page?: string, pageSize?: string, startDate?: string, endDate?: string) {
     const paging = parsePaging(page, pageSize);
-    const [users, total] = await this.userRepo.findAndCount({ order: { createdDate: 'DESC' }, skip: paging.skip, take: paging.take });
+    const range = parseDateRange(startDate, endDate);
+    const [users, total] = await this.userRepo.findAndCount({ where: range ? { createdDate: range } : {}, order: { createdDate: 'DESC' }, skip: paging.skip, take: paging.take });
     return { success: true, data: users, total, page: paging.page, pageSize: paging.pageSize };
   }
 
   // ─── Doctors ─────────────────────────────────────────────────────────────────
 
-  async getAllDoctors(status?: string) {
+  async getAllDoctors(status?: string, startDate?: string, endDate?: string) {
     const where: FindOptionsWhere<Doctor> = {};
+    const range = parseDateRange(startDate, endDate);
+    if (range) where.createdDate = range;
     if (status && status !== 'All') {
       where.status = status;
     }
@@ -218,13 +258,13 @@ export class AdminService {
   async getAllBookings(status?: string, startDate?: string, endDate?: string, page?: string, pageSize?: string) {
     const paging = parsePaging(page, pageSize);
     const where: FindOptionsWhere<Booking> = {};
-    if (status && status !== 'All') where.status = status;
-    if (startDate && endDate) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      where.createdDate = Between(start, end);
+    if (status && status !== 'All') {
+      // Comma-separated list (e.g. 'Completed,VisitCompleted') matches any of them, mirroring the dashboard counts
+      const statuses = status.split(',').map((s) => s.trim()).filter(Boolean);
+      where.status = statuses.length > 1 ? In(statuses) : statuses[0];
     }
+    const range = parseDateRange(startDate, endDate);
+    if (range) where.createdDate = range;
 
     const [bookings, total] = await this.bookingRepo.findAndCount({
       where,
@@ -273,12 +313,30 @@ export class AdminService {
   }
 
   async updateBookingStatus(bookingId: string, status: string, adminId: string, remarks?: string) {
+    if (!VALID_BOOKING_STATUSES.includes(status)) {
+      throw new BadRequestException(`Invalid status. Allowed: ${VALID_BOOKING_STATUSES.join(', ')}`);
+    }
+    if (!/^[0-9]{1,18}$/.test(String(bookingId))) throw new BadRequestException('Invalid booking id');
     const booking = await this.bookingRepo.findOne({ where: { id: bookingId } });
     if (!booking) throw new NotFoundException('Booking not found');
 
     const oldStatus = booking.status;
+    if (oldStatus === status) throw new BadRequestException(`Booking is already ${status}`);
+    if (TERMINAL_BOOKING_STATUSES.includes(oldStatus)) {
+      throw new BadRequestException(`A ${oldStatus} booking can no longer change status`);
+    }
     booking.status = status;
     await this.bookingRepo.save(booking);
+    await this.bookingRepo.manager.save(
+      BookingStatusHistory,
+      this.bookingRepo.manager.create(BookingStatusHistory, {
+        booking: { id: bookingId } as any,
+        oldStatus,
+        newStatus: status,
+        remarks,
+        changedBy: adminId,
+      }),
+    );
 
     await this.audit({
       adminId,
@@ -313,13 +371,9 @@ export class AdminService {
     const paging = parsePaging(page, pageSize);
     const where: FindOptionsWhere<Payment> = {};
     if (status && status !== 'All') where.status = status;
-    if (startDate && endDate) {
-      const start = new Date(startDate);
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      // Filter by verifiedDate instead since createdDate does not exist
-      where.verifiedDate = Between(start, end);
-    }
+    // Payments have no creation date: scope by the booking's creation date, exactly like the dashboard's Payments Done card
+    const range = parseDateRange(startDate, endDate);
+    if (range) where.booking = { createdDate: range };
 
     const [payments, total] = await this.paymentRepo.findAndCount({
       where,
@@ -478,7 +532,7 @@ export class AdminService {
         relations: { user: true }
       });
       if (bookingWithUser?.user?.email) {
-        const scheduledDateStr = new Date(booking.scheduledDate).toLocaleString('en-IN', { dateStyle: 'full', timeStyle: 'short' });
+        const scheduledDateStr = formatDateTimeDMY(booking.scheduledDate);
         await this.emailService.sendDoctorAssigned(
           bookingWithUser.user.email,
           booking.bookingNo,

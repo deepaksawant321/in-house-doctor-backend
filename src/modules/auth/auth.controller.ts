@@ -61,7 +61,8 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Logout and revoke refresh token' })
   async logout(@Request() req: any, @Body('refreshToken') refreshTokenValue: string) {
-    return this.authService.logout(req.user.id, refreshTokenValue);
+    const accessToken = (req.headers?.authorization || '').replace(/^Bearer /i, '') || undefined;
+    return this.authService.logout(req.user.id, refreshTokenValue, accessToken);
   }
 
   @Get('profile')

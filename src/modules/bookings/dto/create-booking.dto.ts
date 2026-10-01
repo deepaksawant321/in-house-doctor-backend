@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsDateString, IsOptional, IsNumber, MaxLength } from 'class-validator';
+import { IsNotEmpty, IsString, IsDateString, IsOptional, IsNumber, MaxLength, IsInt, Min } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -25,16 +25,17 @@ export class CreateBookingDto {
   @ApiPropertyOptional({ example: 'Fever and cold for 2 days' })
   @IsOptional()
   @IsString()
+  @MaxLength(1000)
   symptoms?: string;
 
-  @ApiPropertyOptional({ example: 1, description: 'Service ID for the booking' })
-  @IsOptional()
+  @ApiProperty({ example: 1, description: 'Service ID for the booking' })
   @Type(() => Number)
-  @IsNumber()
-  serviceId?: number;
+  @IsInt()
+  @Min(1)
+  serviceId: number;
 
-  @ApiPropertyOptional({ example: 'uuid-of-address', description: 'Address ID for the booking' })
-  @IsOptional()
+  @ApiProperty({ example: 'uuid-of-address', description: 'Address ID for the booking' })
+  @IsNotEmpty()
   @IsString()
-  addressId?: string;
+  addressId: string;
 }

@@ -23,8 +23,9 @@ async function bootstrap() {
   // Refuse to boot in production with development-only switches enabled
   if (process.env.NODE_ENV === 'production') {
     const unsafe = ['EXPOSE_DEV_OTP', 'MOCK_PAYMENT_GATEWAY'].filter((k) => configService.get(k) === 'true');
+    if (configService.get('DEV_FIXED_OTP')) unsafe.push('DEV_FIXED_OTP');
     if (unsafe.length) {
-      throw new Error(`Unsafe production configuration: ${unsafe.join(', ')} must not be "true" when NODE_ENV=production`);
+      throw new Error(`Unsafe production configuration: ${unsafe.join(', ')} must not be enabled/set when NODE_ENV=production`);
     }
   }
 

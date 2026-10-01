@@ -227,7 +227,8 @@ export class AuthService {
         delete updateData.lastName;
       }
     }
-    return this.usersService.update(userId, updateData);
+    await this.usersService.update(userId, updateData);
+    return this.getProfile(userId);
   }
 
   async refreshToken(refreshTokenValue: string) {
@@ -254,7 +255,11 @@ export class AuthService {
     };
   }
 
-  async logout(userId: string, refreshTokenValue: string) {
+  async logout(userId: string, refreshTokenValue: string, accessToken?: string) {
+    // End the session this access token belongs to (JwtStrategy rejects tokens without an active session)
+    if (accessToken) {
+      await this.sessionRepo.update({ user: { id: userId } as any, accessToken }, { isActive: false });
+    }
     if (!refreshTokenValue || typeof refreshTokenValue !== 'string') {
       return { success: true, message: 'Logged out successfully' };
     }

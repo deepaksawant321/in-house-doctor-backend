@@ -11,7 +11,9 @@ async function bootstrap() {
     
     patientId: '1',
     scheduledDate: '2026-06-10T17:09:55.837Z',
-    symptoms: 'dfsdf dsfdsfdsf'
+    symptoms: 'dfsdf dsfdsfdsf',
+    serviceId: 1,
+    addressId: '1',
   };
 
   try {
