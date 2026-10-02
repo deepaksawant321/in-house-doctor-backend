@@ -58,8 +58,10 @@ import { join } from 'path';
           // MAIL_FROM may already be a full "Name <address>"; only wrap a bare address
           from: (() => {
             const from = config.get<string>('MAIL_FROM') || config.get<string>('SMTP_USER') || '';
-            return from.includes('<') ? from : `"InHouse Doctor" <${from}>`;
+            return from.includes('<') ? from : `"Doctor Doorstep" <${from}>`;
           })(),
+          // Replies to the do-not-reply sender land with the support team
+          replyTo: config.get<string>('MAIL_REPLY_TO') || undefined,
         },
       }),
     }),

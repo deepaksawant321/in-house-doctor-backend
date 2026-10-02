@@ -452,7 +452,7 @@ export class AdminService {
     if (!setting) {
       setting = this.settingRepo.create({
         companyName: 'InHouse Doctor',
-        supportEmail: 'support@inhousedoctor.com',
+        supportEmail: 'support@doctordoorstep.com',
         supportPhone: '1800-123-4567',
         whatsappNumber: '+91 9876543210',
         primaryUpiId: 'pay.inhousedoctor@upi',
@@ -461,7 +461,7 @@ export class AdminService {
     } else if (!setting.companyName) {
       // Populate defaults if an empty record was created previously
       setting.companyName = 'InHouse Doctor';
-      setting.supportEmail = 'support@inhousedoctor.com';
+      setting.supportEmail = 'support@doctordoorstep.com';
       setting.supportPhone = '1800-123-4567';
       setting.whatsappNumber = '+91 9876543210';
       setting.primaryUpiId = 'pay.inhousedoctor@upi';
