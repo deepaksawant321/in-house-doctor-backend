@@ -23,7 +23,7 @@ export class SettingsService {
     if (!setting) {
       setting = this.settingRepo.create({
         companyName: 'InHouse Doctor',
-        supportEmail: 'support@inhousedoctor.com',
+        supportEmail: 'support@doctordoorstep.com',
         supportPhone: '1800-123-4567',
         whatsappNumber: '+91 9876543210',
         primaryUpiId: 'pay.inhousedoctor@upi',

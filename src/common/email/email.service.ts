@@ -15,13 +15,15 @@ export const esc = (value: unknown): string =>
 export class EmailService {
   private readonly logger = new Logger(EmailService.name);
   private readonly adminEmail: string;
-  private readonly fromName = 'InHouse Doctor';
+  private readonly supportEmail: string;
+  private readonly fromName = 'Doctor Doorstep';
 
   constructor(
     private readonly mailerService: MailerService,
     private readonly configService: ConfigService,
   ) {
-    this.adminEmail = this.configService.get<string>('ADMIN_EMAIL') || 'admin@inhousedoctor.com';
+    this.adminEmail = this.configService.get<string>('ADMIN_EMAIL') || 'admin@doctordoorstep.com';
+    this.supportEmail = this.configService.get<string>('SUPPORT_EMAIL') || 'support@doctordoorstep.com';
   }
 
   // ─── Core Send Helper ─────────────────────────────────────────────────────
@@ -76,15 +78,15 @@ export class EmailService {
 <body>
   <div class="wrapper">
     <div class="header">
-      <h1>🏥 InHouse Doctor</h1>
+      <h1>🏥 Doctor Doorstep</h1>
       <p>Premium Healthcare at Your Doorstep</p>
     </div>
     <div class="body">
       ${bodyHtml}
     </div>
     <div class="footer">
-      Need help? Contact us at <strong>support@inhousedoctor.com</strong> or call <strong>9029190955</strong><br/>
-      &copy; ${new Date().getFullYear()} InHouse Doctor. All rights reserved.
+      Need help? Contact us at <strong>${esc(this.supportEmail)}</strong> or call <strong>9029190955</strong><br/>
+      &copy; ${new Date().getFullYear()} Doctor Doorstep. All rights reserved.
     </div>
   </div>
 </body>
