@@ -22,3 +22,7 @@ lerna-debug.log*
 # temp directory
 .temp
 .tmp
+
+# runtime uploads (patient/payment files) must never be committed
+uploads/*
+!uploads/.gitkeep
